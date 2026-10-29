@@ -1,0 +1,9 @@
+# 构建产物一律输出到 E:\MouseBattery 各轮目录，不进源码树。
+*.exe
+*.dll
+*.pdb
+*.obj
+# 编辑器/会话工具元数据
+.zcode/
+*.tmp
+~$*
