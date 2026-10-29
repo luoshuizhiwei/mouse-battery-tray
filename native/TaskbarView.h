@@ -11,6 +11,7 @@
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Xaml.Shapes.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
 #include <winrt/Windows.Foundation.Numerics.h>
 #include <atomic>
@@ -48,7 +49,9 @@ size_t g_elementOffset=0;
 struct View {
     Panel parent{nullptr}; Border host{nullptr}; TextBlock text{nullptr}; ToolTip tooltip{nullptr};
     Border pill{nullptr}; TextBlock suffix{nullptr},tooltipName{nullptr},tooltipValue{nullptr},tooltipStatus{nullptr},tooltipConnection{nullptr};
-    Border tooltipTrack{nullptr}, tooltipFill{nullptr};
+    TextBlock valueUnit{nullptr};
+    Grid tooltipTrack{nullptr}; Border trackBackground{nullptr}, tooltipFill{nullptr};
+    Windows::UI::Xaml::Shapes::Rectangle tickHigh{nullptr}, tickCritical{nullptr};
     ColumnDefinition column{nullptr},implicitColumn{nullptr};
     MenuFlyout menu{nullptr}; MenuFlyoutItem settings{nullptr}, toggle{nullptr}, exit{nullptr};
     event_token settingsToken{},toggleToken{},exitToken{};
@@ -163,23 +166,34 @@ bool Insert(FrameworkElement const& root,int position) {
     v->host.MinWidth(56); v->host.VerticalAlignment(VerticalAlignment::Stretch);
     if(position==3) {v->host.Width(56);v->host.HorizontalAlignment(HorizontalAlignment::Right);}
     v->host.Background(SolidColorBrush(Colors::Transparent()));
-    v->pill=Border(); v->pill.Width(52); v->pill.Height(28); v->pill.CornerRadius({8,8,8,8});
+    v->pill=Border(); v->pill.Width(52); v->pill.Height(28); v->pill.CornerRadius({9,9,9,9});
     v->pill.Padding({4,0,4,0}); v->pill.BorderThickness({1,1,1,1});
     v->pill.HorizontalAlignment(HorizontalAlignment::Center); v->pill.VerticalAlignment(VerticalAlignment::Center);
     StackPanel number; number.Orientation(Orientation::Horizontal); number.HorizontalAlignment(HorizontalAlignment::Center); number.VerticalAlignment(VerticalAlignment::Center);
-    v->text=TextBlock(); v->text.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->text.FontSize(15.0); v->text.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); v->text.VerticalAlignment(VerticalAlignment::Center);
-    v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(10.0); v->suffix.Opacity(0.70); v->suffix.Margin({1.5,1.5,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center);
+    v->text=TextBlock(); v->text.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->text.FontSize(15.5); v->text.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); v->text.VerticalAlignment(VerticalAlignment::Center);
+    v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(10.0); v->suffix.Opacity(0.75); v->suffix.Margin({1,2,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center);
     number.Children().Append(v->text); number.Children().Append(v->suffix); v->pill.Child(number); v->host.Child(v->pill);
-    StackPanel card; card.Width(208); card.Padding({12,10,12,10});
-    v->tooltipName=TextBlock(); v->tooltipName.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipName.FontSize(12.0); v->tooltipName.FontWeight(Windows::UI::Text::FontWeights::Medium()); v->tooltipName.Opacity(0.78); v->tooltipName.Margin({0,0,0,4});
+    StackPanel card; card.Width(224); card.Padding({14,12,14,12});
+    v->tooltipName=TextBlock(); v->tooltipName.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipName.FontSize(12.0); v->tooltipName.FontWeight(Windows::UI::Text::FontWeights::Medium()); v->tooltipName.Opacity(0.85); v->tooltipName.Margin({0,0,0,6});
     v->tooltipValue=TextBlock(); v->tooltipValue.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->tooltipValue.FontSize(30.0); v->tooltipValue.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); v->tooltipValue.VerticalAlignment(VerticalAlignment::Center);
+    // Editorial percent: the numeral stays threshold-colored, the unit recedes.
+    StackPanel valueRow; valueRow.Orientation(Orientation::Horizontal);
+    v->valueUnit=TextBlock(); v->valueUnit.Text(L"%"); v->valueUnit.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->valueUnit.FontSize(13.0); v->valueUnit.Opacity(0.70); v->valueUnit.Margin({3,7,0,0}); v->valueUnit.VerticalAlignment(VerticalAlignment::Center);
+    valueRow.Children().Append(v->tooltipValue); valueRow.Children().Append(v->valueUnit);
     v->tooltipStatus=TextBlock(); v->tooltipStatus.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipStatus.FontSize(11.0); v->tooltipStatus.FontWeight(Windows::UI::Text::FontWeights::Normal());
-    v->tooltipStatus.Margin({0,2,0,0});
-    v->tooltipTrack=Border(); v->tooltipTrack.Height(3); v->tooltipTrack.CornerRadius({1.5,1.5,1.5,1.5}); v->tooltipTrack.Margin({0,10,0,8});
-    v->tooltipFill=Border(); v->tooltipFill.Height(3); v->tooltipFill.HorizontalAlignment(HorizontalAlignment::Left); v->tooltipFill.CornerRadius({1.5,1.5,1.5,1.5}); v->tooltipTrack.Child(v->tooltipFill);
-    v->tooltipConnection=TextBlock(); v->tooltipConnection.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipConnection.FontSize(11.0); v->tooltipConnection.Opacity(0.65);
-    card.Children().Append(v->tooltipName); card.Children().Append(v->tooltipValue); card.Children().Append(v->tooltipStatus); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipConnection);
-    v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->host,v->tooltip);
+    v->tooltipStatus.Margin({0,4,0,0});
+    // Signature scale: threshold ticks at the 20% and 10% marks, drawn over
+    // both the track and the fill so the readout carries its own warning scale.
+    v->tooltipTrack=Grid(); v->tooltipTrack.Height(4); v->tooltipTrack.CornerRadius({2,2,2,2}); v->tooltipTrack.Margin({0,12,0,10});
+    v->trackBackground=Border(); v->trackBackground.CornerRadius({2,2,2,2});
+    v->tooltipFill=Border(); v->tooltipFill.HorizontalAlignment(HorizontalAlignment::Left); v->tooltipFill.CornerRadius({2,2,2,2});
+    v->tickHigh=Windows::UI::Xaml::Shapes::Rectangle(); v->tickHigh.Width(1); v->tickHigh.HorizontalAlignment(HorizontalAlignment::Left); v->tickHigh.Margin({156.8,1,0,1});
+    v->tickCritical=Windows::UI::Xaml::Shapes::Rectangle(); v->tickCritical.Width(1); v->tickCritical.HorizontalAlignment(HorizontalAlignment::Left); v->tickCritical.Margin({176.4,1,0,1});
+    v->tooltipTrack.Children().Append(v->trackBackground); v->tooltipTrack.Children().Append(v->tooltipFill);
+    v->tooltipTrack.Children().Append(v->tickHigh); v->tooltipTrack.Children().Append(v->tickCritical);
+    v->tooltipConnection=TextBlock(); v->tooltipConnection.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipConnection.FontSize(11.0); v->tooltipConnection.Opacity(0.70);
+    card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(v->tooltipStatus); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipConnection);
+    v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({8,8,8,8}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->host,v->tooltip);
     v->menu=MenuFlyout();
     v->settings=MenuFlyoutItem(); v->settings.Text(L"设置");
     v->toggle=MenuFlyoutItem(); v->toggle.Text(L"切换开机启动");
@@ -226,20 +240,29 @@ void Update(Work& work) {
     v.text.Text(std::to_wstring(s.percent));
     bool light=v.host.ActualTheme()==ElementTheme::Light;
     Color color=light ? Color{255,35,50,68} : Color{255,237,243,250};
-    Color fill=light ? Color{14,66,107,148} : Color{18,159,189,222};
-    Color stroke=light ? Color{26,66,107,148} : Color{36,159,189,222};
+    Color fillTop=light ? Color{46,66,107,148} : Color{50,159,189,222};
+    Color fillBottom=light ? Color{14,66,107,148} : Color{16,159,189,222};
+    Color stroke=light ? Color{45,66,107,148} : Color{55,159,189,222};
     if(s.percent<=20) {
         color=light ? Color{255,145,96,18} : Color{255,235,193,111};
-        fill=light ? Color{22,230,140,0} : Color{26,248,198,70};
-        stroke=light ? Color{55,200,120,0} : Color{62,248,198,70};
+        fillTop=light ? Color{30,230,140,0} : Color{34,248,198,70};
+        fillBottom=light ? Color{8,230,140,0} : Color{10,248,198,70};
+        stroke=light ? Color{60,200,120,0} : Color{65,248,198,70};
     }
     if(s.percent<=10) {
         color=light ? Color{255,178,58,67} : Color{255,247,150,155};
-        fill=light ? Color{22,196,43,28} : Color{30,255,125,125};
-        stroke=light ? Color{52,196,43,28} : Color{68,255,125,125};
+        fillTop=light ? Color{32,196,43,28} : Color{38,255,125,125};
+        fillBottom=light ? Color{10,196,43,28} : Color{12,255,125,125};
+        stroke=light ? Color{60,196,43,28} : Color{65,255,125,125};
     }
     v.text.Foreground(SolidColorBrush(color)); v.suffix.Foreground(SolidColorBrush(color));
-    v.pill.Background(SolidColorBrush(fill)); v.pill.BorderBrush(SolidColorBrush(stroke));
+    // Layered glass pill: dense at the top edge, fading toward the bottom.
+    LinearGradientBrush fillBrush;
+    fillBrush.StartPoint({0,0}); fillBrush.EndPoint({0,1});
+    GradientStop topStop; topStop.Color(fillTop); topStop.Offset(0.0);
+    GradientStop bottomStop; bottomStop.Color(fillBottom); bottomStop.Offset(1.0);
+    fillBrush.GradientStops().Append(topStop); fillBrush.GradientStops().Append(bottomStop);
+    v.pill.Background(fillBrush); v.pill.BorderBrush(SolidColorBrush(stroke));
     std::wstring detail(s.tooltip);
     v.tooltipName.Text(detail.substr(0,detail.find(L'\n')));
     v.tooltipValue.Text(std::to_wstring(s.percent)+L"%");
@@ -254,11 +277,14 @@ void Update(Work& work) {
     v.tooltip.Background(SolidColorBrush(light ? Color{255,250,252,255} : Color{255,34,44,57}));
     v.tooltip.BorderBrush(SolidColorBrush(light ? Color{255,220,230,242} : Color{255,49,64,82}));
     v.tooltipName.Foreground(SolidColorBrush(muted));
+    v.valueUnit.Foreground(SolidColorBrush(muted));
     v.tooltipStatus.Foreground(SolidColorBrush(s.state==2 ? (light ? Color{255,145,96,18} : Color{255,235,193,111}) : muted));
     v.tooltipConnection.Foreground(SolidColorBrush(muted));
-    v.tooltipTrack.Background(SolidColorBrush(light ? Color{255,229,237,246} : Color{255,49,64,82}));
+    v.trackBackground.Background(SolidColorBrush(light ? Color{255,229,237,246} : Color{255,49,64,82}));
+    Color tick=light ? Color{110,113,128,148} : Color{110,169,189,222};
+    v.tickHigh.Fill(SolidColorBrush(tick)); v.tickCritical.Fill(SolidColorBrush(tick));
     v.tooltipFill.Background(SolidColorBrush(s.percent<=20 ? color : accent));
-    v.tooltipFill.Width(184.0*s.percent/100.0);
+    v.tooltipFill.Width(196.0*s.percent/100.0);
     Automation::AutomationProperties::SetName(v.host,hstring(s.tooltip));
     v.toggle.Text(s.startup ? L"关闭开机启动" : L"开启开机启动");
     v.host.UpdateLayout();

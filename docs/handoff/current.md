@@ -1,6 +1,32 @@
 # 鼠标电量工具 — 当前交接
 
-更新：2026-10-30，Asia/Hong_Kong。当前正式交付 v3.3.0，独立应用，“雾蓝”主题 + 指纹失效降级托盘 + 设置窗口图形化。
+更新：2026-10-30，Asia/Hong_Kong。当前正式交付 v3.4.0，独立应用，“雾蓝·电量仪表”主题 + 指纹失效降级托盘 + 设置窗口图形化。
+
+## v3.4 增量（同日深夜）
+
+用户要求全方位美化，确认方向“精修雾蓝·仪表化”（保留雾蓝身份，工艺升级；任务栏只显示百分比、无动画两个已确认约束不动）。**本轮结束原生侧自 v3.1 未动的状态**：`native/TaskbarView.h` 重建为新原生 DLL，托管侧同步升级。
+
+- 任务栏胶囊：单色填充改垂直 LinearGradientBrush 玻璃渐变（顶浓底淡，三态同构），描边 alpha light 26→45 / dark 36→55，圆角 8→9，数字 Segoe UI Variable **Display 15.5pt**，% 后缀 0.75 不透明度。外层 56×48 与内容宽约束不变。
+- 悬停卡片（签名元素落地）：卡宽 208→224、内边距 {14,12,14,12}；大百分比后加 13pt 弱色 "%" 单位；**刻度条 3→4px 并在 20%/10% 位置加两道阈值刻度线**（Grid 结构：背景+填充+两枚 Rectangle，刻度绘制在填充之上）；ToolTip 加 CornerRadius 8；名称行不透明度 0.78→0.85。
+- 设置窗口（`src/Program.cs`）：新增 `RoundedPanel`（圆角填充+1px 描边，token #D8E3F0/#3A4A5E）用于状态卡与降级横幅；状态卡大数字 22→30pt Display + 独立小 "%" 标签（离线态大数字显示 "--" 不再重复百分号）；刻度条 4px + 同款阈值刻度；标题左侧 24px 自绘电量标记；自启复选框 → `ToggleSwitch`（CheckBox 子类 UserPaint 全自绘 36×18 轨道开关，Checked/UIA ToggleState 语义保留）；按钮补 MouseOverBackColor；位置选择器描边 token 统一；选择器胶囊离线显示 "--"。
+- 托盘降级图标（`src/TrayIcon.cs`）：纯文字 → 电池壳设计（圆角壳+右侧 nub+内部数字，阈值色作用于整体）；`Tests.cs` levels 加 -1，逻辑检查 36→38。
+- 版本 3.4.0.0。
+
+### v3.4 验证
+
+- `build-standalone-native.ps1` 重建成功；新内嵌 DLL SHA256 `BF5777F11A3E2C8F60948EA226AAE15C56FA2BB13B0460DB8839A8DD1A4AA37F`（旧 4F157C45 组件目录保留，应用按哈希各自解压）。
+- `test.ps1`：38 项逻辑 + 10 项 IPC 全过；`icons.png` 证据表含电池壳 -1/-- 占位行。
+- AppearanceProbe（新 DLL 重建）8 项全过：56×48 外层、100% 内容宽 33.100≤42、阈值色、旧值 state=2。
+- 正式 EXE SHA256：`C7FBFEC58C66DAC0337693386E5BF7FBD5E7626D8BC09A423E4BAAB63EE2A147`（v3.3 为 `A338EB37…DCF9`，已备份 `robust-v3.2\baseline\MouseBattery-v3.3.exe`）。
+- 截图证据（`robust-v3.2\`）：`settings-v340-offline.png`（深色正常态：电量标记/圆角卡/Display 大数字/开关/选择器）、`settings-v340-degraded.png`（假指纹降级横幅态）。
+- 真机链路：候选启动时真实读到 78%（01:47:51）；随后设备空闲休眠（C54D timeout），15 秒旧值期限按设计自动隐藏（`TaskbarDataVisible=False`）——顺带完成一次期限路径的现场验证。设备唤醒后恢复显示。
+- 未完成/边界：**悬停卡片实截未完成**（设备休眠期间胶囊隐藏，两次捕获尝试均未出现 tooltip；悬停卡属性设置路径由 Probe 覆盖）；浅色主题截图继续记边界；ToggleSwitch 方向键/读屏实测未做（Checked 语义未变，风险低）。
+
+### 单实例测试注意
+
+本轮实测确认：候选运行中启动假指纹探针 `--manage`，信号被转给候选（探针按单实例设计退出）——探针类验证前必须先 `--exit` 候选。
+
+## v3.3 增量（同日晚间）
 
 ## v3.3 增量（同日晚间）
 

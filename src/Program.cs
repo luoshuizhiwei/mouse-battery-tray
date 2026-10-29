@@ -13,7 +13,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("鼠标电量")]
-[assembly: System.Reflection.AssemblyVersion("3.3.0.0")]
+[assembly: System.Reflection.AssemblyVersion("3.4.0.0")]
 namespace MouseBattery {
 internal static class Startup {
     const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -99,7 +99,7 @@ internal sealed class PositionPicker : Control {
     internal int Percent { set { percent=value; Invalidate(); } }
     internal void SetTheme(bool lightTheme,Color foreground,Color muted,Color accent,Color track) {
         light=lightTheme; barFill=track; captionColor=muted; pillText=foreground;
-        lineColor=light ? Color.FromArgb(203,216,233) : Color.FromArgb(70,88,110);
+        lineColor=light ? Color.FromArgb(216,227,240) : Color.FromArgb(58,74,94);
         blockColor=light ? Color.FromArgb(206,218,233) : Color.FromArgb(62,78,100);
         pillFill=light ? Color.FromArgb(46,66,107,148) : Color.FromArgb(58,159,189,222);
         anchorColor=light ? Color.FromArgb(160,113,128,148) : Color.FromArgb(160,159,177,198);
@@ -175,6 +175,44 @@ internal sealed class PositionPicker : Control {
     protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
     protected override void OnLostFocus(EventArgs e) { hover=-1; Invalidate(); base.OnLostFocus(e); }
 }
+// Shared rounded surface for cards and the degraded banner: soft fill with a
+// 1 px mist-blue stroke, matching the taskbar pill geometry.
+internal sealed class RoundedPanel : Panel {
+    readonly Color fillColor,strokeColor;
+    public RoundedPanel(Color fill,Color stroke) { fillColor=fill; strokeColor=stroke; SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint|ControlStyles.ResizeRedraw|ControlStyles.SupportsTransparentBackColor,true); }
+    protected override void OnPaint(PaintEventArgs e) {
+        var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using(var path=PositionPicker.RoundPath(new RectangleF(0.5f,0.5f,Width-1,Height-1),8)) {
+            using(var b=new SolidBrush(fillColor)) g.FillPath(b,path);
+            using(var p=new Pen(strokeColor)) g.DrawPath(p,path);
+        }
+    }
+}
+// Owner-drawn switch on CheckBox semantics: Checked stays authoritative, so
+// WinForms automation keeps reporting the real ToggleState while the paint
+// becomes a proper toggle instead of the legacy check box.
+internal sealed class ToggleSwitch : CheckBox {
+    readonly Color onColor,offColor,knobColor,textColor;
+    public ToggleSwitch(Color on,Color off,Color knob,Color text) {
+        onColor=on; offColor=off; knobColor=knob; textColor=text;
+        SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint|ControlStyles.ResizeRedraw,true);
+        Size=new Size(232,26);
+    }
+    protected override void OnPaint(PaintEventArgs e) {
+        var g=e.Graphics;
+        g.Clear(Parent!=null ? Parent.BackColor : SystemColors.Control);
+        g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        float trackY=(Height-18)/2f;
+        using(var path=PositionPicker.RoundPath(new RectangleF(0,trackY,36,18),9)) {
+            using(var b=new SolidBrush(Checked ? onColor : offColor)) g.FillPath(b,path);
+        }
+        using(var b=new SolidBrush(knobColor)) g.FillEllipse(b,Checked ? 20 : 2,trackY+2,14,14);
+        if(!string.IsNullOrEmpty(Text)) TextRenderer.DrawText(g,Text,Font,new Point(46,(Height-FontHeight)/2),textColor);
+        if(Focused) ControlPaint.DrawFocusRectangle(g,new Rectangle(0,(int)trackY-2,40,22));
+    }
+    protected override void OnCheckedChanged(EventArgs e) { Invalidate(); base.OnCheckedChanged(e); }
+    protected override void OnTextChanged(EventArgs e) { Invalidate(); base.OnTextChanged(e); }
+}
 internal sealed class TrayContext : ApplicationContext {
     readonly BatterySource source=new BatterySource();
     readonly DisplayState state=new DisplayState();
@@ -192,7 +230,7 @@ internal sealed class TrayContext : ApplicationContext {
     readonly EventWaitHandle quit=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ExitEventName);
     readonly EventWaitHandle toggleStartup=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ToggleEventName);
     readonly string statusPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"data","status.txt");
-    Form manager; Label managerDevice, managerConnection, managerPercent, managerCharge; CheckBox managerStartup; PositionPicker positionPicker;
+    Form manager; Label managerDevice, managerConnection, managerPercent, managerUnit, managerCharge; CheckBox managerStartup; PositionPicker positionPicker;
     Panel managerTrack;
     bool managerLight;
     int managerLevel;
@@ -370,18 +408,18 @@ internal sealed class TrayContext : ApplicationContext {
 
         if(visible && state.Last!=null) {
             managerDevice.Text=state.Last.Name;
-            managerPercent.Text=state.Last.Percent+"%";
+            managerPercent.Text=state.Last.Percent+"";
             managerPercent.ForeColor=state.Last.Percent<=10 ? redText : state.Last.Percent<=20 ? amberText : normalText;
             managerCharge.Text=state.Last.ChargeText;
             managerConnection.Text=state.Failed ? "正在重连 · 上次读数" : ("已连接 · "+(state.Last.Connection=="有线" ? "USB 有线" : "2.4G 无线"));
             managerLevel=state.Last.Percent;
         } else {
             managerDevice.Text="鼠标设备未连接";
-            managerPercent.Text="--%";
+            managerPercent.Text="--";
             managerPercent.ForeColor=normalText;
             managerCharge.Text="暂无电量";
             managerConnection.Text=string.IsNullOrEmpty(failure) ? "等待设备连接" : failure;
-            managerLevel=0;
+            managerLevel=-1;
         }
         managerTrack.Invalidate();
         if(positionPicker!=null && !positionPicker.IsDisposed) { positionPicker.Percent=managerLevel; positionPicker.Invalidate(); }
@@ -396,42 +434,46 @@ internal sealed class TrayContext : ApplicationContext {
             Color muted=light ? Color.FromArgb(113,128,148) : Color.FromArgb(159,177,198);
             Color accent=light ? Color.FromArgb(66,107,148) : Color.FromArgb(159,189,222);
             Color track=light ? Color.FromArgb(229,237,246) : Color.FromArgb(49,64,82);
+            Color border=light ? Color.FromArgb(216,227,240) : Color.FromArgb(58,74,94);
             // Degraded runs swap the position picker for an honest status banner.
-            manager=new Form { Text="鼠标电量", AutoScaleMode=AutoScaleMode.None, Font=new Font("Microsoft YaHei UI",9f), ClientSize=new Size(432,degraded ? 356 : 372), BackColor=background,ForeColor=foreground, FormBorderStyle=FormBorderStyle.FixedDialog, MaximizeBox=false, MinimizeBox=false, StartPosition=FormStartPosition.CenterScreen };
-            var heading=new Label { Text="鼠标电量",Font=new Font("Microsoft YaHei UI",15f,FontStyle.Bold),Location=new Point(20,16),AutoSize=true };
-            var subtitle=new Label { Text="任务栏与启动设置",ForeColor=muted,Location=new Point(21,49),AutoSize=true };
-            var controls=new List<Control>(); controls.Add(heading); controls.Add(subtitle);
+            manager=new Form { Text="鼠标电量", AutoScaleMode=AutoScaleMode.None, Font=new Font("Microsoft YaHei UI",9f), ClientSize=new Size(432,degraded ? 356 : 378), BackColor=background,ForeColor=foreground, FormBorderStyle=FormBorderStyle.FixedDialog, MaximizeBox=false, MinimizeBox=false, StartPosition=FormStartPosition.CenterScreen };
+            var mark=new Panel { Location=new Point(20,19),Size=new Size(24,24) };
+            mark.Paint+=delegate(object sender,PaintEventArgs e) {
+                var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using(var pen=new Pen(accent,1.6f)) using(var path=PositionPicker.RoundPath(new RectangleF(1,3,19,17),4.5f)) g.DrawPath(pen,path);
+                using(var b=new SolidBrush(accent)) { g.FillRectangle(b,21,8.5f,2.6f,6.5f); using(var path=PositionPicker.RoundPath(new RectangleF(4,6.5f,10,10),2f)) g.FillPath(b,path); }
+            };
+            var heading=new Label { Text="鼠标电量",Font=new Font("Microsoft YaHei UI",15f,FontStyle.Bold),Location=new Point(52,17),AutoSize=true };
+            var subtitle=new Label { Text="任务栏与启动设置",ForeColor=muted,Location=new Point(53,52),AutoSize=true };
+            var controls=new List<Control>(); controls.Add(mark); controls.Add(heading); controls.Add(subtitle);
             if(degraded) {
                 Color bannerBg=light ? Color.FromArgb(252,244,227) : Color.FromArgb(58,49,32);
                 Color bannerLine=light ? Color.FromArgb(230,197,131) : Color.FromArgb(106,90,48);
                 Color bannerText=light ? Color.FromArgb(122,86,20) : Color.FromArgb(235,193,111);
-                var banner=new Panel { Location=new Point(20,82),Size=new Size(392,46) };
-                banner.Paint+=delegate(object sender,PaintEventArgs e) {
-                    e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    using(var path=PositionPicker.RoundPath(new RectangleF(0,0,banner.Width,banner.Height),6)) {
-                        using(var b=new SolidBrush(bannerBg)) e.Graphics.FillPath(b,path);
-                        using(var p=new Pen(bannerLine)) e.Graphics.DrawPath(p,path);
-                    }
-                };
+                var banner=new RoundedPanel(bannerBg,bannerLine) { Location=new Point(20,82),Size=new Size(392,46) };
                 var bannerLabel=new Label { Text="任务栏版本未适配，当前以托盘图标显示电量（指纹 "+ShortHash(degradedReason)+"），适配后自动恢复",Location=new Point(11,4),Size=new Size(370,38),ForeColor=bannerText };
                 banner.Controls.Add(bannerLabel);
                 controls.Add(banner);
             }
-            var statusCard=new Panel { Location=new Point(20,degraded ? 136 : 82),Size=new Size(392,104),BackColor=surface };
+            var statusCard=new RoundedPanel(surface,border) { Location=new Point(20,degraded ? 136 : 88),Size=new Size(392,104) };
             managerDevice=new Label { Location=new Point(16,14),Size=new Size(220,24),Font=new Font("Segoe UI Variable Text",11f,FontStyle.Bold) };
             managerConnection=new Label { Location=new Point(16,47),Size=new Size(230,32),ForeColor=muted,AutoEllipsis=true };
-            managerPercent=new Label { Location=new Point(248,10),Size=new Size(128,36),Font=new Font("Segoe UI Variable Display",22f,FontStyle.Bold),TextAlign=ContentAlignment.MiddleRight };
-            managerCharge=new Label { Location=new Point(248,51),Size=new Size(128,22),ForeColor=muted,TextAlign=ContentAlignment.MiddleRight };
-            managerTrack=new Panel { Location=new Point(16,86),Size=new Size(360,3),BackColor=track,AccessibleName="当前电量刻度" };
+            // Instrument numeral: Display face for the readout, the unit recedes.
+            managerPercent=new Label { Location=new Point(206,4),Size=new Size(120,52),Font=new Font("Segoe UI Variable Display",30f,FontStyle.Bold),TextAlign=ContentAlignment.MiddleRight };
+            managerUnit=new Label { Text="%",Location=new Point(328,28),Size=new Size(46,26),Font=new Font("Segoe UI Variable Display",13f),ForeColor=muted,TextAlign=ContentAlignment.MiddleLeft };
+            managerCharge=new Label { Location=new Point(248,58),Size=new Size(128,22),ForeColor=muted,TextAlign=ContentAlignment.MiddleRight };
+            managerTrack=new Panel { Location=new Point(16,88),Size=new Size(360,4),BackColor=track,AccessibleName="当前电量刻度" };
             managerTrack.Paint+=delegate(object sender,PaintEventArgs e) {
-                Color color=managerLevel<=20 ? (managerLevel<=10 ? (light ? Color.FromArgb(178,58,67) : Color.FromArgb(247,150,155)) : (light ? Color.FromArgb(145,96,18) : Color.FromArgb(235,193,111))) : accent;
-                using(var brush=new SolidBrush(color)) e.Graphics.FillRectangle(brush,0,0,managerTrack.Width*managerLevel/100f,managerTrack.Height);
+                int level=Math.Max(0,managerLevel);
+                Color color=level<=20 ? (level<=10 ? (light ? Color.FromArgb(178,58,67) : Color.FromArgb(247,150,155)) : (light ? Color.FromArgb(145,96,18) : Color.FromArgb(235,193,111))) : accent;
+                using(var brush=new SolidBrush(color)) e.Graphics.FillRectangle(brush,0,0,managerTrack.Width*level/100f,managerTrack.Height);
+                using(var brush=new SolidBrush(border)) { e.Graphics.FillRectangle(brush,managerTrack.Width*0.8f,0,1,managerTrack.Height); e.Graphics.FillRectangle(brush,managerTrack.Width*0.9f,0,1,managerTrack.Height); }
             };
-            statusCard.Controls.AddRange(new Control[]{managerDevice,managerConnection,managerPercent,managerCharge,managerTrack});
+            statusCard.Controls.AddRange(new Control[]{managerDevice,managerConnection,managerPercent,managerUnit,managerCharge,managerTrack});
             controls.Add(statusCard);
             int rowY;
             if(!degraded) {
-                positionPicker=new PositionPicker { Location=new Point(20,194),Size=new Size(392,62) };
+                positionPicker=new PositionPicker { Location=new Point(20,200),Size=new Size(392,62) };
                 positionPicker.SetTheme(light,foreground,muted,accent,track);
                 positionPicker.Position=position;
                 positionPicker.PositionChanged+=delegate {
@@ -441,16 +483,16 @@ internal sealed class TrayContext : ApplicationContext {
                     catch(SecurityException e) { MessageBox.Show("无法保存位置："+e.Message,"鼠标电量"); }
                 };
                 controls.Add(positionPicker);
-                rowY=264;
+                rowY=268;
             } else rowY=250;
-            managerStartup=new CheckBox { Text="登录 Windows 后自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(20,rowY),AutoSize=true,Checked=Startup.Enabled };
+            managerStartup=new ToggleSwitch(accent,border,light ? Color.White : Color.FromArgb(237,243,250),foreground) { Text="登录 Windows 后自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(20,rowY),Checked=Startup.Enabled };
             managerStartup.CheckedChanged+=delegate { if(!updatingSettings) SetStartup(managerStartup.Checked); };
             var note=new Label { Text=degraded ? "关闭窗口后继续在托盘显示" : "关闭窗口后继续在任务栏显示",Font=new Font("Microsoft YaHei UI",8.5f),ForeColor=muted,Location=new Point(21,rowY+35),AutoSize=true };
-            int buttonY=degraded ? 310 : 326;
+            int buttonY=degraded ? 310 : 332;
             var exit=new Button { Text="退出工具",Location=new Point(20,buttonY),Size=new Size(96,30),FlatStyle=FlatStyle.Flat,BackColor=background,ForeColor=muted };
-            exit.FlatAppearance.BorderSize=0; exit.Click+=delegate { ExitThread(); };
+            exit.FlatAppearance.BorderSize=0; exit.FlatAppearance.MouseOverBackColor=track; exit.Click+=delegate { ExitThread(); };
             var close=new Button { Text="完成",AccessibleName="完成设置并关闭窗口",Location=new Point(316,buttonY),Size=new Size(96,30),FlatStyle=FlatStyle.Flat,BackColor=accent,ForeColor=light ? Color.White : background };
-            close.FlatAppearance.BorderSize=0; close.Click+=delegate { manager.Close(); };
+            close.FlatAppearance.BorderSize=0; close.FlatAppearance.MouseOverBackColor=ControlPaint.Dark(accent); close.Click+=delegate { manager.Close(); };
             controls.Add(managerStartup); controls.Add(note); controls.Add(exit); controls.Add(close);
             manager.Controls.AddRange(controls.ToArray());
             // This programmatic layout is measured in 96-DPI units. Scale its

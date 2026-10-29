@@ -33,9 +33,9 @@ internal static class Tests {
         Check(TrayIcon.Foreground(-1,false)==TrayIcon.Foreground(95,false),"missing reading keeps the normal color, not a threshold");
         using(var missing=TrayIcon.Create(-1,false,24)) Check(missing.Width==24 && missing.Height==24,"missing-reading placeholder icon renders");
         Check(TrayIcon.Render(-1,true,16)!=null,"missing-reading placeholder bitmap renders");
-        using(var sheet=new Bitmap(600,180)) using(var g=Graphics.FromImage(sheet)) {
-            g.Clear(Color.FromArgb(42,42,42)); g.FillRectangle(Brushes.White,0,90,600,90);
-            int[] levels={0,9,10,11,20,21,95,100};
+        using(var sheet=new Bitmap(700,180)) using(var g=Graphics.FromImage(sheet)) {
+            g.Clear(Color.FromArgb(42,42,42)); g.FillRectangle(Brushes.White,0,90,700,90);
+            int[] levels={-1,0,9,10,11,20,21,95,100};
             for(int row=0;row<2;row++) for(int i=0;i<levels.Length;i++) {
                 using(var b=TrayIcon.Render(levels[i],row==1,16)) g.DrawImageUnscaled(b,16+i*72,10+row*90);
                 using(var b=TrayIcon.Render(levels[i],row==1,24)) g.DrawImageUnscaled(b,12+i*72,40+row*90);
