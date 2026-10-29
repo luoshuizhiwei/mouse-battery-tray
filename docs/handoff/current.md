@@ -1,17 +1,33 @@
 # 鼠标电量工具 — 当前交接
 
-更新：2026-10-30，Asia/Hong_Kong。当前正式交付 v3.2.0，独立应用，“雾蓝”主题 + 指纹失效降级托盘。
+更新：2026-10-30，Asia/Hong_Kong。当前正式交付 v3.3.0，独立应用，“雾蓝”主题 + 指纹失效降级托盘 + 设置窗口图形化。
 
-## 当前结果
+## v3.3 增量（同日晚间）
+
+用户确认做三项设置窗口改动：迷你任务栏位置选择器（签名改动）、降级状态说明条、深浅主题实时跟随。改动全部在 `src/Program.cs`（版本 3.3.0.0），原生侧与 HID/IPC 链路未动。
+
+- 迷你任务栏选择器 `PositionPicker`：自绘 Control 画出任务栏示意图（应用按钮区/托盘区/时钟块），电量胶囊（含实时百分比）钉在四个落点中的当前位，其余落点画锚点圆圈；点击落点或左右方向键切换（`IsInputKey` 接管方向键，焦点圈可见），落点命中区宽约 10% 控件宽。无障碍：AccessibleName/Description + 键盘路径，替换原 owner-draw ComboBox。
+- 降级横幅：降级模式下窗口顶部显示琥珀说明条“任务栏版本未适配，当前以托盘图标显示电量（指纹 <SHA256 缩写>），适配后自动恢复”（`ShortHash` 取 64 位指纹前 8 后 4），隐藏位置选择器，底部提示改为“关闭窗口后继续在托盘显示”，窗口高度相应收敛。
+- 主题实时跟随：`SystemEvents.UserPreferenceChanged` → UI 线程检查 `AppsUseLightTheme` 变化 → 关闭并重建设置窗口（调色板统一重读）；降级时托盘图标同步换色重建。Dispose 解除订阅。
+
+### v3.3 验证
+
+- `test.ps1` 36 项逻辑 + 10 项 IPC 全过（不触及 ShowManager，守护未被改逻辑）。
+- 设置窗口三态截图（`E:\MouseBattery\robust-v3.2\settings-v330-*.png`，PrintWindow 实截）：深色正常态（胶囊在位置 0、三锚点、说明文字正确）、点击落点 1 后（胶囊移动、说明“紧邻时钟左侧”、注册表 TaskbarPosition=1）、假指纹降级态（琥珀横幅 + 指纹缩写 + 选择器隐藏 + “托盘显示”提示）。点击回位置 0 已还原注册表。
+- 注意：本次窗口开在 125% 缩放的屏幕（此前交接按 150% 验证），布局按 DPI 正确缩放，坐标点击按 1.25 系数命中，实际额外验证了非 150% DPI 下的布局自适应。
+- 未验收：浅色调色板未单独截图（改系统主题验证过于侵入；调色板代码与深色对称）；主题实时切换未实测（同因）；方向键路径未实测（需抢焦点，代码路径与点击共用 Apply）。降级横幅下的窗口交互只做了截图核对。
+
+## v3.2 主改动（当日早些时候）
 
 用户授权按健壮性、资源与性能、功能增强（指纹失效降级托盘）、轻整理四个方向优化。全部改动仅在托管 C# 侧；原生 `native/NativeHost.cpp`、`native/TaskbarView.h` 未改动，内嵌原生 DLL 与 v3.1 完全相同。
 
 - 正式 EXE：`E:\MouseBattery\app\MouseBattery.exe`。
-- EXE SHA256：`9A6E35DE1593058DA5330E144A8C6C755C1F7A12F437A645FC75C989808B04C4`。
+- EXE SHA256：`A338EB37552A84CEE50B3AA79A3BE3EC2A744694D44EA4B8B624F66AB072DCF9`（v3.3.0；v3.2.0 为 `9A6E35DE…B04C4`，v3.1 为 `1B0DBEA6…2A56A`）。
 - 内嵌原生 DLL SHA256：`4F157C4598657842A8FD98D3E3D99E269760385AE716FE73C637723C0A3D5A08`（未变）。
-- 本轮目录：`E:\MouseBattery\robust-v3.2`（`candidate`、`degraded-probe`、`baseline\MouseBattery-v3.1.exe`、`appearance-probe.txt`）。
+- 本轮目录：`E:\MouseBattery\robust-v3.2`（`candidate-v330`、`degraded-probe*`、`baseline\MouseBattery-v3.1.exe` 与 `baseline\MouseBattery-v3.2.exe`、`appearance-probe.txt`、设置窗口截图）。
 - 真机实测 78%、无线、未充电、位置 0、登录自启开启；Explorer 未重启。
 - taskbar.dll 指纹 `CA1E335A…0741` 不变；v3.1 交接见 [v3.1 历史](2026-10-29-taskbar-v3.1.0.md)。
+- 源码 Git 基线 `main` 分支（2026-10-30 建立，v3.2.0 首次提交），v3.3 以 feat 提交跟进。
 
 ## 本轮改动
 
