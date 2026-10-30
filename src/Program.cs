@@ -13,7 +13,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("鼠标电量")]
-[assembly: System.Reflection.AssemblyVersion("3.4.0.0")]
+[assembly: System.Reflection.AssemblyVersion("3.4.1.0")]
 namespace MouseBattery {
 internal static class Startup {
     const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -235,7 +235,7 @@ internal sealed class TrayContext : ApplicationContext {
     bool managerLight;
     int managerLevel;
     bool busy,closing,updatingSettings,disposed;
-    long nextPoll;
+    long nextPoll; int pollFailures,pollInterval=5000;
     string lastStatus="",failure="尚未读取";
     int position;
     bool showOnStart;
@@ -294,6 +294,11 @@ internal sealed class TrayContext : ApplicationContext {
             state.Apply(result,uptime.ElapsedMilliseconds);
             if(result!=null) publisher.MarkSuccess();
             failure=source.LastError;
+            // A sleeping link answers nothing; retrying it every 5 s keeps a
+            // request parked on the RF hop most of the time. Back off while it
+            // keeps timing out so motion gets the link back.
+            if(result!=null) { pollFailures=0; pollInterval=5000; }
+            else { pollFailures++; pollInterval=Math.Min(10000,5000*pollFailures); }
         } catch(Exception e) {
             // An unexpected escape from the poll task must not tear down the
             // resident process; route it to the same visible error surface as
@@ -301,7 +306,7 @@ internal sealed class TrayContext : ApplicationContext {
             failure="读取线程异常："+e.Message;
         }
         if(closing) return;
-        nextPoll=uptime.ElapsedMilliseconds+5000; busy=false;
+        nextPoll=uptime.ElapsedMilliseconds+pollInterval; busy=false;
         RefreshDisplay();
     }
     private void RefreshDisplay() {
@@ -317,7 +322,7 @@ internal sealed class TrayContext : ApplicationContext {
         }
         string status=visible ? text : "未连接或电量暂不可用\n"+failure;
         if(manager!=null && !manager.IsDisposed) UpdateManagerDisplay(visible);
-        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
+        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nPollInterval="+pollInterval+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
         if(diagnostic!=lastStatus) {
             try { File.WriteAllText(statusPath,DateTimeOffset.Now.ToString("o")+"\n"+diagnostic,Encoding.UTF8); }
             catch(IOException ex) { ShowFileError(ex.Message); }

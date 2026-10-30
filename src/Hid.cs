@@ -123,8 +123,10 @@ internal sealed class HidConnection : IDisposable {
         Transfer(request,true,700);
         var clock=Stopwatch.StartNew();
         // C54D replies can arrive after 900 ms, including while the mouse is idle.
-        // Keep the full request correlated and bounded; stale replies are skipped.
-        const int responseTimeoutMs=4000;
+        // The window stays 2.2x that worst case, but no longer: an outstanding
+        // request into a sleeping link shares the same RF hop as user motion, so
+        // every idle second held here is a second the cursor can stutter.
+        const int responseTimeoutMs=2000;
         while(clock.ElapsedMilliseconds<responseTimeoutMs) {
             byte[] response=new byte[device.InputLength];
             int count=Transfer(response,false,(int)Math.Max(1,responseTimeoutMs-clock.ElapsedMilliseconds));
