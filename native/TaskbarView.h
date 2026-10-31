@@ -13,6 +13,8 @@
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.Shapes.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
+#include <winrt/Windows.UI.Input.h>
 #include <winrt/Windows.Foundation.Numerics.h>
 #include <atomic>
 #include <memory>
@@ -52,9 +54,14 @@ struct View {
     TextBlock valueUnit{nullptr};
     Grid tooltipTrack{nullptr}; Border trackBackground{nullptr}, tooltipFill{nullptr};
     Windows::UI::Xaml::Shapes::Rectangle tickHigh{nullptr}, tickCritical{nullptr};
+    FontIcon statusGlyph{nullptr};
     ColumnDefinition column{nullptr},implicitColumn{nullptr};
     MenuFlyout menu{nullptr}; MenuFlyoutItem settings{nullptr}, toggle{nullptr}, exit{nullptr};
-    event_token settingsToken{},toggleToken{},exitToken{};
+    event_token settingsToken{},toggleToken{},exitToken{},hoverEnter{},hoverExit{},pressToken{};
+    // Pill color state kept so a pointer hover can lift the alphas without a
+    // data dispatch; hover is the only affordance the tiny pill can carry.
+    Color baseTop{},baseBottom{},baseStroke{};
+    bool hover=false;
     int position=-1;
 };
 std::unique_ptr<View> g_view;
@@ -108,6 +115,21 @@ XamlRoot TaskbarRoot(HWND window) {
     return element ? element.XamlRoot() : nullptr;
 }
 
+// Pill coloring lives here so a pointer hover can lift the alphas immediately,
+// without waiting for the next 500 ms data dispatch.
+void PaintPill(View& v) {
+    if(!v.pill) return;
+    int lift=v.hover ? 18 : 0;
+    auto liftA=[&](Color const& c)->Color { unsigned a=(unsigned)c.A+lift; return Color{ (uint8_t)std::min(255u,a),c.R,c.G,c.B }; };
+    Color top=liftA(v.baseTop),bottom=liftA(v.baseBottom),stroke=liftA(v.baseStroke);
+    LinearGradientBrush brush;
+    brush.StartPoint({0,0}); brush.EndPoint({0,1});
+    GradientStop s1; s1.Color(top); s1.Offset(0.0);
+    GradientStop s2; s2.Color(bottom); s2.Offset(1.0);
+    brush.GradientStops().Append(s1); brush.GradientStops().Append(s2);
+    v.pill.Background(brush); v.pill.BorderBrush(SolidColorBrush(stroke));
+}
+
 void Launch(wchar_t const* argument) {
     std::wstring command=L"\""+g_reader+L"\" "+argument;
     STARTUPINFOW start{sizeof(start)}; start.dwFlags=STARTF_USESHOWWINDOW; start.wShowWindow=SW_HIDE;
@@ -123,6 +145,7 @@ void Remove() {
     auto& v=*g_view;
     v.menu.Hide();
     v.settings.Click(v.settingsToken); v.toggle.Click(v.toggleToken); v.exit.Click(v.exitToken);
+    v.pill.PointerEntered(v.hoverEnter); v.pill.PointerExited(v.hoverExit); v.host.PointerPressed(v.pressToken);
     v.host.ContextFlyout(nullptr);
     uint32_t index=0;
     if(v.parent.Children().IndexOf(v.host,index)) v.parent.Children().RemoveAt(index);
@@ -182,6 +205,10 @@ bool Insert(FrameworkElement const& root,int position) {
     valueRow.Children().Append(v->tooltipValue); valueRow.Children().Append(v->valueUnit);
     v->tooltipStatus=TextBlock(); v->tooltipStatus.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipStatus.FontSize(11.0); v->tooltipStatus.FontWeight(Windows::UI::Text::FontWeights::Normal());
     v->tooltipStatus.Margin({0,4,0,0});
+    // Charging is the one state that earns a symbol; verified E945 bolt.
+    v->statusGlyph=FontIcon(); v->statusGlyph.Glyph(L"\uE945"); v->statusGlyph.FontFamily(FontFamily(L"Segoe MDL2 Assets")); v->statusGlyph.FontSize(12.0); v->statusGlyph.Margin({0,3,5,0}); v->statusGlyph.Visibility(Visibility::Collapsed);
+    StackPanel statusRow; statusRow.Orientation(Orientation::Horizontal);
+    statusRow.Children().Append(v->statusGlyph); statusRow.Children().Append(v->tooltipStatus);
     // Signature scale: threshold ticks at the 20% and 10% marks, drawn over
     // both the track and the fill so the readout carries its own warning scale.
     v->tooltipTrack=Grid(); v->tooltipTrack.Height(4); v->tooltipTrack.CornerRadius({2,2,2,2}); v->tooltipTrack.Margin({0,12,0,10});
@@ -192,17 +219,26 @@ bool Insert(FrameworkElement const& root,int position) {
     v->tooltipTrack.Children().Append(v->trackBackground); v->tooltipTrack.Children().Append(v->tooltipFill);
     v->tooltipTrack.Children().Append(v->tickHigh); v->tooltipTrack.Children().Append(v->tickCritical);
     v->tooltipConnection=TextBlock(); v->tooltipConnection.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipConnection.FontSize(11.0); v->tooltipConnection.Opacity(0.70);
-    card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(v->tooltipStatus); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipConnection);
+    card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(statusRow); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipConnection);
     v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({8,8,8,8}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->host,v->tooltip);
     v->menu=MenuFlyout();
-    v->settings=MenuFlyoutItem(); v->settings.Text(L"设置");
-    v->toggle=MenuFlyoutItem(); v->toggle.Text(L"切换开机启动");
-    v->exit=MenuFlyoutItem(); v->exit.Text(L"退出工具");
+    auto iconFor=[](wchar_t const* glyph){ FontIcon i; i.FontFamily(FontFamily(L"Segoe MDL2 Assets")); i.Glyph(glyph); return i; };
+    v->settings=MenuFlyoutItem(); v->settings.Text(L"设置"); v->settings.Icon(iconFor(L"\uE713"));
+    v->toggle=MenuFlyoutItem(); v->toggle.Text(L"切换开机启动"); v->toggle.Icon(iconFor(L"\uE72C"));
+    v->exit=MenuFlyoutItem(); v->exit.Text(L"退出工具"); v->exit.Icon(iconFor(L"\uE7E8"));
     v->settingsToken=v->settings.Click([](auto const&,auto const&){Launch(L"--manage");});
     v->toggleToken=v->toggle.Click([](auto const&,auto const&){Launch(L"--toggle-startup");});
     v->exitToken=v->exit.Click([](auto const&,auto const&){Launch(L"--exit");});
-    v->menu.Items().Append(v->settings); v->menu.Items().Append(v->toggle); v->menu.Items().Append(v->exit);
+    v->menu.Items().Append(v->settings); v->menu.Items().Append(v->toggle); v->menu.Items().Append(MenuFlyoutSeparator()); v->menu.Items().Append(v->exit);
     v->host.ContextFlyout(v->menu);
+    // The pill reads as a label today; hover lift and a left click shortcut
+    // make its two affordances discoverable. (UWP XAML exposes no per-element
+    // cursor API, so the hand cursor is not available here.)
+    v->hoverEnter=v->pill.PointerEntered([](auto const&,auto const&){ if(g_view){ g_view->hover=true; PaintPill(*g_view); } });
+    v->hoverExit=v->pill.PointerExited([](auto const&,auto const&){ if(g_view){ g_view->hover=false; PaintPill(*g_view); } });
+    v->pressToken=v->host.PointerPressed([](auto const&,winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& args){
+        if(args.GetCurrentPoint(nullptr).Properties().IsLeftButtonPressed() && g_view) Launch(L"--manage");
+    });
     if(grid) {
         // An empty ColumnDefinitions collection means one implicit star column.
         // Materialize it before inserting our Auto column; otherwise native
@@ -257,12 +293,8 @@ void Update(Work& work) {
     }
     v.text.Foreground(SolidColorBrush(color)); v.suffix.Foreground(SolidColorBrush(color));
     // Layered glass pill: dense at the top edge, fading toward the bottom.
-    LinearGradientBrush fillBrush;
-    fillBrush.StartPoint({0,0}); fillBrush.EndPoint({0,1});
-    GradientStop topStop; topStop.Color(fillTop); topStop.Offset(0.0);
-    GradientStop bottomStop; bottomStop.Color(fillBottom); bottomStop.Offset(1.0);
-    fillBrush.GradientStops().Append(topStop); fillBrush.GradientStops().Append(bottomStop);
-    v.pill.Background(fillBrush); v.pill.BorderBrush(SolidColorBrush(stroke));
+    v.baseTop=fillTop; v.baseBottom=fillBottom; v.baseStroke=stroke;
+    PaintPill(v);
     std::wstring detail(s.tooltip);
     v.tooltipName.Text(detail.substr(0,detail.find(L'\n')));
     v.tooltipValue.Text(std::to_wstring(s.percent)+L"%");
@@ -273,6 +305,15 @@ void Update(Work& work) {
     v.tooltipConnection.Text(s.state==2 ? L"等待设备恢复连接" : s.transport==1 ? L"已连接 · USB 有线" : L"已连接 · 2.4G 无线");
     Color muted=light ? Color{255,113,128,148} : Color{255,159,177,198};
     Color accent=light ? Color{255,66,107,148} : Color{255,159,189,222};
+    // Threshold ticks carry meaning: amber once the fill crosses 20%, red at
+    // 10%; neutral while the reading is healthy.
+    Color neutralTick=light ? Color{110,113,128,148} : Color{110,169,189,222};
+    Color highTick=s.percent<=20 ? (light ? Color{200,145,96,18} : Color{200,235,193,111}) : neutralTick;
+    Color critTick=s.percent<=10 ? (light ? Color{200,178,58,67} : Color{200,247,150,155}) : neutralTick;
+    v.tickHigh.Fill(SolidColorBrush(highTick)); v.tickCritical.Fill(SolidColorBrush(critTick));
+    bool charging=s.charging==1||s.charging==2;
+    v.statusGlyph.Visibility(charging ? Visibility::Visible : Visibility::Collapsed);
+    if(charging) v.statusGlyph.Foreground(SolidColorBrush(accent));
     v.tooltip.RequestedTheme(light ? ElementTheme::Light : ElementTheme::Dark);
     v.tooltip.Background(SolidColorBrush(light ? Color{255,250,252,255} : Color{255,34,44,57}));
     v.tooltip.BorderBrush(SolidColorBrush(light ? Color{255,220,230,242} : Color{255,49,64,82}));
@@ -281,8 +322,6 @@ void Update(Work& work) {
     v.tooltipStatus.Foreground(SolidColorBrush(s.state==2 ? (light ? Color{255,145,96,18} : Color{255,235,193,111}) : muted));
     v.tooltipConnection.Foreground(SolidColorBrush(muted));
     v.trackBackground.Background(SolidColorBrush(light ? Color{255,229,237,246} : Color{255,49,64,82}));
-    Color tick=light ? Color{110,113,128,148} : Color{110,169,189,222};
-    v.tickHigh.Fill(SolidColorBrush(tick)); v.tickCritical.Fill(SolidColorBrush(tick));
     v.tooltipFill.Background(SolidColorBrush(s.percent<=20 ? color : accent));
     v.tooltipFill.Width(196.0*s.percent/100.0);
     Automation::AutomationProperties::SetName(v.host,hstring(s.tooltip));
@@ -292,6 +331,8 @@ void Update(Work& work) {
     work.health=L"visible position="+std::to_wstring(s.position)+L" percent="+std::to_wstring(s.percent)+L" x="+std::to_wstring(point.X)+L" y="+std::to_wstring(point.Y)+L" width="+std::to_wstring(v.host.ActualWidth())+L" height="+std::to_wstring(v.host.ActualHeight())+L" parent="+std::wstring(get_class_name(v.parent));
     work.health+=L" style=mist-blue pillWidth="+std::to_wstring(v.pill.ActualWidth())+L" pillHeight="+std::to_wstring(v.pill.ActualHeight())+L" numberWidth="+std::to_wstring(v.text.ActualWidth())+L" suffixWidth="+std::to_wstring(v.suffix.ActualWidth());
     work.health+=L" state="+std::to_wstring(s.state)+L" textRGB="+std::to_wstring(color.R)+L","+std::to_wstring(color.G)+L","+std::to_wstring(color.B);
+    auto solidRGB=[](Windows::UI::Xaml::Shapes::Rectangle const& r){ auto b=r.Fill().as<SolidColorBrush>(); return std::to_wstring(b.Color().R)+L","+std::to_wstring(b.Color().G)+L","+std::to_wstring(b.Color().B); };
+    work.health+=L" tickHigh="+solidRGB(v.tickHigh)+L" tickCritical="+solidRGB(v.tickCritical);
 }
 
 LRESULT CALLBACK DispatchHook(int code,WPARAM wParam,LPARAM lParam) {

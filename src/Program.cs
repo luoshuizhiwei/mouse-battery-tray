@@ -13,7 +13,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("鼠标电量")]
-[assembly: System.Reflection.AssemblyVersion("3.4.1.0")]
+[assembly: System.Reflection.AssemblyVersion("3.5.0.0")]
 namespace MouseBattery {
 internal static class Startup {
     const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -472,7 +472,12 @@ internal sealed class TrayContext : ApplicationContext {
                 int level=Math.Max(0,managerLevel);
                 Color color=level<=20 ? (level<=10 ? (light ? Color.FromArgb(178,58,67) : Color.FromArgb(247,150,155)) : (light ? Color.FromArgb(145,96,18) : Color.FromArgb(235,193,111))) : accent;
                 using(var brush=new SolidBrush(color)) e.Graphics.FillRectangle(brush,0,0,managerTrack.Width*level/100f,managerTrack.Height);
-                using(var brush=new SolidBrush(border)) { e.Graphics.FillRectangle(brush,managerTrack.Width*0.8f,0,1,managerTrack.Height); e.Graphics.FillRectangle(brush,managerTrack.Width*0.9f,0,1,managerTrack.Height); }
+                // Same threshold-tick language as the hover card: a crossed
+                // mark lights up, healthy marks stay neutral.
+                Color highTick=level<=20 ? (light ? Color.FromArgb(190,145,96,18) : Color.FromArgb(190,235,193,111)) : border;
+                Color critTick=level<=10 ? (light ? Color.FromArgb(200,178,58,67) : Color.FromArgb(200,247,150,155)) : highTick;
+                using(var b=new SolidBrush(highTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.8f,0,1,managerTrack.Height);
+                using(var b=new SolidBrush(critTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.9f,0,1,managerTrack.Height);
             };
             statusCard.Controls.AddRange(new Control[]{managerDevice,managerConnection,managerPercent,managerUnit,managerCharge,managerTrack});
             controls.Add(statusCard);

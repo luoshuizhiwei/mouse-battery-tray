@@ -32,6 +32,14 @@ class AppearanceProbe {
                 string rgb=value<=10 ? "178,58,67" : value<=20 ? "145,96,18" : "35,50,68";
                 string dark=value<=10 ? "247,150,155" : value<=20 ? "235,193,111" : "237,243,250";
                 if(!status.Contains("textRGB="+rgb) && !status.Contains("textRGB="+dark)) throw new Exception("Wrong threshold color: "+status);
+                // Signature scale: the 20% tick lights amber once crossed, the
+                // 10% tick goes red; both stay neutral above the thresholds.
+                string hiTick=value<=20 ? "145,96,18" : "113,128,148";
+                string hiTickD=value<=20 ? "235,193,111" : "169,189,222";
+                string critTick=value<=10 ? "178,58,67" : "113,128,148";
+                string critTickD=value<=10 ? "247,150,155" : "169,189,222";
+                if(!status.Contains("tickHigh="+hiTick) && !status.Contains("tickHigh="+hiTickD)) throw new Exception("Wrong 20% tick state: "+status);
+                if(!status.Contains("tickCritical="+critTick) && !status.Contains("tickCritical="+critTickD)) throw new Exception("Wrong 10% tick state: "+status);
                 Console.WriteLine("PASS simulated "+value+"% stale="+stale+" contentWidth="+content.ToString("F3",CultureInfo.InvariantCulture)+" | "+status);
             }
         }

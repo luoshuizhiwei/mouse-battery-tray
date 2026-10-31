@@ -1,6 +1,25 @@
 # 鼠标电量工具 — 当前交接
 
-更新：2026-10-30，Asia/Hong_Kong。当前正式交付 v3.4.0，独立应用，“雾蓝·电量仪表”主题 + 指纹失效降级托盘 + 设置窗口图形化。
+更新：2026-10-31，Asia/Hong_Kong。当前正式交付 v3.5.0，独立应用，“雾蓝·电量仪表”主题 + 交互可感知层。
+
+## v3.5 增量（10-31）
+
+用户确认三项质感方向：胶囊交互可感知、刻度线点亮、状态符号语言。原生 `TaskbarView.h` 重建（新 DLL），托管同步。
+
+- **胶囊交互**：PointerEntered/Exited 悬停提亮（alpha +18，`PaintPill` 助手即时重涂，不等 500ms 数据节拍）；host 左键 PointerPressed → `Launch(--manage)`（右键保留 ContextFlyout）。注：UWP XAML 无 per-element Cursor API，手型光标不可用（编译期确认，记为平台限制）。
+- **刻度线点亮**（签名元素第二层）：20% 刻度在填充越过时变琥珀、10% 变红，未越过保持中性；健康串新增 `tickHigh=`/`tickCritical=` 颜色输出，AppearanceProbe 按值断言（0/9/10 双亮、20 单亮、21+ 双中性）。设置窗口 `managerTrack` 同款逻辑。
+- **符号语言**：右键菜单 FontIcon 图标（设置 E713/切换启动 E72C/退出 E7E8，离线渲染表核验）+ 退出前 MenuFlyoutSeparator；悬停卡充电时状态行前 E945 闪电 FontIcon（accent 色，非充电态 Collapsed）。
+- 版本 3.5.0.0；新内嵌 DLL SHA256 `E7EE9B7BF6B46D3E1D8AA6170690F8182AA7F1D994F7AD4AF895432AD5A3F7A5`；正式 EXE SHA256 `FFFE1ED3E1FBF42076C791FBD3A72508DD2C56604EF9B8B9C83FCD9C02DA3CA8`（v3.4.1 备份 `baseline\MouseBattery-v3.4.1.exe`）。
+
+### v3.5 验证
+
+- 原生初次编译抓出三类错误并修复：UWP XAML 无 Cursor API（功能放弃而非绕过）、`v.`/`v->` 笔误、缺 `Windows.UI.Input.h`。
+- `test.ps1` 38 逻辑 + 10 IPC；AppearanceProbe 8 项含新刻度断言全过。
+- 真机：候选真实 52%、正常退出 `DetachResult=0`（验证新事件解绑不破坏 Detach/Remove 路径）、晋升后 `Native=initialized`、`Startup=True`。
+- **待目视确认**（验收时全屏游戏在前台，桌面自动化停止；图标码位已离线渲染核验，属性路径由 Probe 覆盖）：悬停提亮的实截、左键点击开设置、菜单图标观感、充电闪电（需充电时目视）。
+- `app\components\` 现存 4 个历史版本目录（4F15/5832/BF57/E7EE），按需清理非本轮范围。
+
+## v3.4 增量（10-30 深夜）
 
 ## v3.4 增量（同日深夜）
 
