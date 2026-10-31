@@ -57,7 +57,7 @@ struct View {
     FontIcon statusGlyph{nullptr};
     ColumnDefinition column{nullptr},implicitColumn{nullptr};
     MenuFlyout menu{nullptr}; MenuFlyoutItem settings{nullptr}, toggle{nullptr}, exit{nullptr};
-    event_token settingsToken{},toggleToken{},exitToken{},hoverEnter{},hoverExit{},pressToken{};
+    event_token settingsToken{},toggleToken{},exitToken{},hoverEnter{},hoverExit{};
     // Pill color state kept so a pointer hover can lift the alphas without a
     // data dispatch; hover is the only affordance the tiny pill can carry.
     Color baseTop{},baseBottom{},baseStroke{};
@@ -115,19 +115,25 @@ XamlRoot TaskbarRoot(HWND window) {
     return element ? element.XamlRoot() : nullptr;
 }
 
-// Pill coloring lives here so a pointer hover can lift the alphas immediately,
-// without waiting for the next 500 ms data dispatch.
+// Pill coloring lives here so a pointer hover swaps the readout between its
+// two states immediately: at rest it is bare text like the native clock, and
+// only hovering wakes the glass pill (plus the data weight) — without waiting
+// for the next 500 ms data dispatch.
 void PaintPill(View& v) {
     if(!v.pill) return;
-    int lift=v.hover ? 18 : 0;
-    auto liftA=[&](Color const& c)->Color { unsigned a=(unsigned)c.A+lift; return Color{ (uint8_t)std::min(255u,a),c.R,c.G,c.B }; };
-    Color top=liftA(v.baseTop),bottom=liftA(v.baseBottom),stroke=liftA(v.baseStroke);
+    auto weight=v.hover ? Windows::UI::Text::FontWeights::SemiBold() : Windows::UI::Text::FontWeights::Normal();
+    v.text.FontWeight(weight); v.suffix.FontWeight(weight);
+    if(!v.hover) {
+        v.pill.Background(SolidColorBrush(Colors::Transparent()));
+        v.pill.BorderBrush(SolidColorBrush(Colors::Transparent()));
+        return;
+    }
     LinearGradientBrush brush;
     brush.StartPoint({0,0}); brush.EndPoint({0,1});
-    GradientStop s1; s1.Color(top); s1.Offset(0.0);
-    GradientStop s2; s2.Color(bottom); s2.Offset(1.0);
+    GradientStop s1; s1.Color(v.baseTop); s1.Offset(0.0);
+    GradientStop s2; s2.Color(v.baseBottom); s2.Offset(1.0);
     brush.GradientStops().Append(s1); brush.GradientStops().Append(s2);
-    v.pill.Background(brush); v.pill.BorderBrush(SolidColorBrush(stroke));
+    v.pill.Background(brush); v.pill.BorderBrush(SolidColorBrush(v.baseStroke));
 }
 
 void Launch(wchar_t const* argument) {
@@ -145,7 +151,7 @@ void Remove() {
     auto& v=*g_view;
     v.menu.Hide();
     v.settings.Click(v.settingsToken); v.toggle.Click(v.toggleToken); v.exit.Click(v.exitToken);
-    v.pill.PointerEntered(v.hoverEnter); v.pill.PointerExited(v.hoverExit); v.host.PointerPressed(v.pressToken);
+    v.pill.PointerEntered(v.hoverEnter); v.pill.PointerExited(v.hoverExit);
     v.host.ContextFlyout(nullptr);
     uint32_t index=0;
     if(v.parent.Children().IndexOf(v.host,index)) v.parent.Children().RemoveAt(index);
@@ -193,8 +199,10 @@ bool Insert(FrameworkElement const& root,int position) {
     v->pill.Padding({4,0,4,0}); v->pill.BorderThickness({1,1,1,1});
     v->pill.HorizontalAlignment(HorizontalAlignment::Center); v->pill.VerticalAlignment(VerticalAlignment::Center);
     StackPanel number; number.Orientation(Orientation::Horizontal); number.HorizontalAlignment(HorizontalAlignment::Center); number.VerticalAlignment(VerticalAlignment::Center);
-    v->text=TextBlock(); v->text.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->text.FontSize(15.5); v->text.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); v->text.VerticalAlignment(VerticalAlignment::Center);
-    v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(10.0); v->suffix.Opacity(0.75); v->suffix.Margin({1,2,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center);
+    // At rest the readout matches the native clock (Text face, quiet weight,
+    // no background); hovering wakes the glass pill and the data weight.
+    v->text=TextBlock(); v->text.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->text.FontSize(12.5); v->text.FontWeight(Windows::UI::Text::FontWeights::Normal()); v->text.VerticalAlignment(VerticalAlignment::Center);
+    v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(9.5); v->suffix.Opacity(0.75); v->suffix.Margin({1,2,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center);
     number.Children().Append(v->text); number.Children().Append(v->suffix); v->pill.Child(number); v->host.Child(v->pill);
     StackPanel card; card.Width(224); card.Padding({14,12,14,12});
     v->tooltipName=TextBlock(); v->tooltipName.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipName.FontSize(12.0); v->tooltipName.FontWeight(Windows::UI::Text::FontWeights::Medium()); v->tooltipName.Opacity(0.85); v->tooltipName.Margin({0,0,0,6});
@@ -231,14 +239,10 @@ bool Insert(FrameworkElement const& root,int position) {
     v->exitToken=v->exit.Click([](auto const&,auto const&){Launch(L"--exit");});
     v->menu.Items().Append(v->settings); v->menu.Items().Append(v->toggle); v->menu.Items().Append(MenuFlyoutSeparator()); v->menu.Items().Append(v->exit);
     v->host.ContextFlyout(v->menu);
-    // The pill reads as a label today; hover lift and a left click shortcut
-    // make its two affordances discoverable. (UWP XAML exposes no per-element
-    // cursor API, so the hand cursor is not available here.)
+    // Hover reveals the glass pill; left click stays inert on purpose so a
+    // stray click on the readout can never trigger anything.
     v->hoverEnter=v->pill.PointerEntered([](auto const&,auto const&){ if(g_view){ g_view->hover=true; PaintPill(*g_view); } });
     v->hoverExit=v->pill.PointerExited([](auto const&,auto const&){ if(g_view){ g_view->hover=false; PaintPill(*g_view); } });
-    v->pressToken=v->host.PointerPressed([](auto const&,winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& args){
-        if(args.GetCurrentPoint(nullptr).Properties().IsLeftButtonPressed() && g_view) Launch(L"--manage");
-    });
     if(grid) {
         // An empty ColumnDefinitions collection means one implicit star column.
         // Materialize it before inserting our Auto column; otherwise native

@@ -1,6 +1,23 @@
 # 鼠标电量工具 — 当前交接
 
-更新：2026-10-31，Asia/Hong_Kong。当前正式交付 v3.5.0，独立应用，“雾蓝·电量仪表”主题 + 交互可感知层。
+更新：2026-10-31，Asia/Hong_Kong。当前正式交付 v3.6.0，独立应用，“雾蓝·电量仪表”主题；任务栏读数与原生时钟同构。
+
+## v3.6 增量（10-31 晚）
+
+用户纠正 v3.5 的两个方向性错误：① **左键点击开设置必须移除**——“左键不能有任何动作，万一误触”，只保留右键菜单与悬停；② 任务栏读数要“完全契合任务栏”而非贴片感（用户使用 TranslucentTB 透明任务栏，玻璃底在透明背景上像贴片）。
+
+- 左键 `PointerPressed` → `Launch(--manage)` 已整体移除（handler+token+Remove 解绑），左键零动作是硬约束，写入 README。
+- 静息态与原生时钟同构：pill 背景与描边透明，数字 Segoe UI Variable **Text 12.5 Regular**（原 Display 15.5 SemiBold），% 9.5pt；悬停时玻璃底+描边出现、数字字重转 SemiBold（`PaintPill` 按 hover 分支，无动画）。阈值变色、悬停卡、菜单图标、刻度点亮全部保留。
+- 编译踩坑记录：WinRT `FontWeights` 是 `Normal` 不是 WPF 的 `Regular`。
+- 版本 3.6.0.0；新内嵌 DLL SHA256 `BA02518CD0706DC122DAD2DF6713340A357CE79161A5D714F0B00C099479D252`；正式 EXE SHA256 `2EA2D00C8C1FB8ECD06FF9B7AC3EF85521A8A8097F47AB9F681B7A926E6C6C7E`（v3.5 备份 `baseline\MouseBattery-v3.5.0.exe`）。
+
+### v3.6 验证
+
+- `test.ps1` 38+10；AppearanceProbe 8 项（新 DLL 重建）全过，100% 内容宽降到 27.5（同构字体更窄，占位约束余量更大）。
+- 真机：晋升后 `Native=initialized`、真实 52% 实时读数、`Startup=True`。
+- 静息同构/悬停显底为视觉状态，待用户任务栏目视（全屏游戏与光标不扰原则下不做自动化截屏）。
+
+## v3.5 增量（10-31）
 
 ## v3.5 增量（10-31）
 
