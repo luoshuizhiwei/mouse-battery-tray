@@ -203,7 +203,7 @@ bool Insert(FrameworkElement const& root,int position) {
     // background) but one step larger than the clock for legibility; hovering
     // wakes the glass pill and the data weight.
     v->text=TextBlock(); v->text.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->text.FontSize(15.0); v->text.FontWeight(Windows::UI::Text::FontWeights::Normal()); v->text.VerticalAlignment(VerticalAlignment::Center);
-    v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(11.0); v->suffix.Opacity(0.75); v->suffix.Margin({1,2,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center);
+    v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(12.0); v->suffix.Opacity(0.80); v->suffix.Margin({1,2,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center);
     number.Children().Append(v->text); number.Children().Append(v->suffix); v->pill.Child(number); v->host.Child(v->pill);
     StackPanel card; card.Width(224); card.Padding({14,12,14,12});
     v->tooltipName=TextBlock(); v->tooltipName.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipName.FontSize(12.0); v->tooltipName.FontWeight(Windows::UI::Text::FontWeights::Medium()); v->tooltipName.Opacity(0.85); v->tooltipName.Margin({0,0,0,6});
