@@ -317,12 +317,12 @@ void Update(Work& work) {
         v.tooltipOther.Visibility(Visibility::Visible);
         v.tooltipOther.Text(detail.substr(nl+1));
     } else v.tooltipOther.Visibility(Visibility::Collapsed);
-    // Personality chip: tooltip's last line is 电竞/办公. The chip colors the
-    // kind, accents the pill border only for the gaming line, and rewrites the
-    // charging row for AA-powered office mice.
+    // Personality chip: tooltip's last line tags 电竞/办公 internally. The chip
+    // shows the product line instead of the category word, and only the color
+    // dot plus the gaming accent edge distinguish the two cards.
     bool gaming=detail.find(L"电竞")!=std::wstring::npos;
     v.kindRow.Visibility(Visibility::Visible);
-    v.tooltipKind.Text(gaming ? L"电竞 · 可充电" : L"办公 · AA 电池");
+    v.tooltipKind.Text(gaming ? L"PRO X 系列" : L"Signature 系列");
     v.kindGlyph.Fill(SolidColorBrush(gaming ? accent : muted));
     v.tooltipValue.Text(std::to_wstring(s.percent)+L"%");
     v.tooltipValue.Foreground(SolidColorBrush(color));
