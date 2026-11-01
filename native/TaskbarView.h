@@ -117,12 +117,11 @@ XamlRoot TaskbarRoot(HWND window) {
 
 // Pill coloring lives here so a pointer hover swaps the readout between its
 // two states immediately: at rest it is bare text like the native clock, and
-// only hovering wakes the glass pill (plus the data weight) — without waiting
-// for the next 500 ms data dispatch.
+// only hovering wakes the glass pill — without waiting for the next 500 ms
+// data dispatch. Weight stays constant: SemiBold glyphs are wider, and the
+// centered readout would visibly jump on hover.
 void PaintPill(View& v) {
     if(!v.pill) return;
-    auto weight=v.hover ? Windows::UI::Text::FontWeights::SemiBold() : Windows::UI::Text::FontWeights::Normal();
-    v.text.FontWeight(weight); v.suffix.FontWeight(weight);
     if(!v.hover) {
         v.pill.Background(SolidColorBrush(Colors::Transparent()));
         v.pill.BorderBrush(SolidColorBrush(Colors::Transparent()));
