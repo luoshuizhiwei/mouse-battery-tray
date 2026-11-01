@@ -1,6 +1,25 @@
 # 鼠标电量工具 — 当前交接
 
-更新：2026-11-01，Asia/Hong_Kong。当前正式交付 v3.7.0，独立应用，“雾蓝·电量仪表”主题 + **双鼠标自动跟随**。
+更新：2026-11-01，Asia/Hong_Kong。当前正式交付 **v3.8.3**，独立应用。主题即将重构为 Catppuccin（见下）。
+
+## 当前交付锚点
+
+- 正式 EXE：`E:\MouseBattery\app\MouseBattery.exe`，SHA256 `19D3A0E2EFB1912948366D90E7C46186F0F064999F6AA2FE5A8DC52853630E9F`
+- 内嵌原生 DLL SHA256：`09A42A4D9847E596D48A3F710FE37541F8090DC608159244F79DA65F1E5AC19D`
+- Git `main` 最新：`6844302`（v3.8.3 崩溃修复）
+- 备份：`E:\MouseBattery\robust-v3.2\baseline\`
+
+## v3.7 → v3.8.3 演进摘要（详见 git log）
+
+- **v3.7.0 双鼠标支持**：PRO X 2 DEX + M750L，任务栏自动跟随当前在用的（Raw Input），悬停卡列全两只。
+- **v3.7.1 Bolt 索引扫描**：M750L 经 Bolt 接收器时配对在设备索引 2（非 1），发现阶段扫索引 1-3。
+- **v3.8.0 差异化显示**：Kind 由身份字节判定，悬停卡按设备人格渲染。
+- **v3.8.1 chip 改产品线名**：用户不要"电竞/办公"分类词，chip 改为 PRO X 系列/Signature 系列。
+- **v3.8.3 崩溃修复（重要）**：v3.8.0 原生源码变量顺序错误导致该轮原生构建实际失败，部署管线放行旧 DLL 继续走完；叠加 Raw Input `GetRawInputData` 缓冲只有 header 大小（需 header+RAWMOUSE），开设置时 UI 线程繁忙、WM_INPUT 爆发期踩堆（0xC0000374）。**教训：原生构建失败必须中止整条部署链；DLL 哈希要核对是本次产物。**
+
+## 前端重构计划（v4.0.0，已批准）
+
+主题从雾蓝换为 **Catppuccin**（Mocha 深色/Latte 浅色，hex 已实测官方 palette.json）。三层前端重构，实施规格见 `docs/proposals/catppuccin-refactor-spec.md`（自包含，可直接交给实现者）。保留全部设备/协议/生命周期链路，快照 ABI 512B 不动。
 
 ## v3.7 增量（11-01）
 
