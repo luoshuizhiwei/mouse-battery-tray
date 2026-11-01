@@ -45,8 +45,30 @@ internal sealed class BatterySource {
     internal string LastError="尚未读取";
     internal readonly List<string> FailedPaths=new List<string>();
 
-    static byte AddressFor(HidDevice d) { return d.Pid==0xC54D||d.Pid==0xC548 ? (byte)1 : (byte)255; }
-    internal static string ConnectionFor(HidDevice d) { return d.Pid==0xC0A0 ? "有线" : d.Pid==0xB02C ? "蓝牙" : "2.4G"; }
+    static byte AddressFor(HidDevice d) { return d.Pid==0xC54D ? (byte)1 : d.Pid==0xC548 ? (byte)0 : (byte)255; }
+    // A Bolt receiver hosts up to three paired devices on distinct HID++ indices;
+    // channel 1 on the Easy-Switch does not imply index 1. Sweep once at discovery.
+    readonly Dictionary<string,byte[]> boltSweep=new Dictionary<string,byte[]>();
+    byte[] BoltIndices(HidDevice receiver) {
+        byte[] cached;
+        if(boltSweep.TryGetValue(receiver.Path,out cached)) return cached;
+        cached=new byte[0];
+        try {
+            using(var h=new HidConnection(receiver)) {
+                foreach(byte addr in new byte[]{1,2,3}) {
+                    try {
+                        byte fw=h.Feature(addr,3);
+                        if(fw==0) continue;
+                        byte[] identity=h.Query(addr,fw,0);
+                        if(identity.Length>=13 && identity[7]==0xB0 && identity[8]==0x2C) { cached=new byte[]{addr}; break; }
+                    } catch(TimeoutException) { } catch(IOException) { }
+                }
+            }
+        } catch(Win32Exception) { } catch(IOException) { }
+        boltSweep[receiver.Path]=cached;
+        return cached;
+    }
+    internal static string ConnectionFor(HidDevice d) { return d.Pid==0xC0A0 ? "有线" : d.Pid==0xB02C ? "蓝牙" : d.Pid==0xC548 ? "Bolt 接收器" : "2.4G"; }
     // PRO X 2 DEX carries its pid at identity[9..10]; the M750 puts it at [7..8].
     static bool SupportedIdentity(byte[] identity) {
         if(identity.Length<13) return false;
@@ -100,8 +122,16 @@ internal sealed class BatterySource {
         var errors=new List<string>();
         foreach(var d in candidates) {
             Entry e;
-            if(!entries.TryGetValue(d.Path,out e)) { e=new Entry { Device=d, Address=AddressFor(d) }; entries[d.Path]=e; }
-            else e.Device=d;
+            if(!entries.TryGetValue(d.Path,out e)) {
+                byte addr=AddressFor(d);
+                if(d.Pid==0xC548) {
+                    byte[] found=BoltIndices(d);
+                    if(found.Length==0) continue; // nothing paired on this Bolt
+                    addr=found[0];
+                }
+                e=new Entry { Device=d, Address=addr };
+                entries[d.Path]=e;
+            } else e.Device=d;
             if(!e.WasPresent) { e.Failures=0; e.NextTryMs=0; e.WasPresent=true; } // fresh (re)appearance retries at once
             if(nowMs<e.NextTryMs) continue;
             bool discover=e.Unit==null;
@@ -140,24 +170,36 @@ internal sealed class DisplayState {
         foreach(var r in readings) {
             if(r==null || r.UnitId==null) continue;
             View v; if(!devices.TryGetValue(r.UnitId,out v)) { v=new View{Token=TokenOf(r.Path)}; devices[r.UnitId]=v; }
-            v.Last=r; v.LastSuccessMs=nowMs; v.Failed=false; v.Token=TokenOf(r.Path);
+            v.Last=r; v.LastSuccessMs=nowMs; v.Failed=false; v.Token=TokenOf(r.Path)+":"+BoltIndexOf(r.Path);
         }
     }
     internal void MarkFailed(string[] paths,long nowMs) {
         if(paths==null) return;
         foreach(var p in paths) {
-            string token=TokenOf(p);
+            string token=TokenOf(p)+":"+BoltIndexOf(p);
             foreach(var v in devices.Values) if(v.Token==token) { v.Failed=true; break; }
         }
     }
     internal void SetActive(string unitKey) { if(unitKey!=null) ActiveKey=unitKey; }
     // Raw input names and device paths share the pid token even though their
     // instance formats differ (vid_046d vs the GATT-prefixed vid&02046d form).
+    // Bolt-hosted devices are further distinguished by their pairing index,
+    // which raw input exposes in the parent hub instance segment.
     internal string KeyForRawPath(string rawPath) {
         string token=TokenOf(rawPath);
         if(token==null) return null;
-        foreach(var v in devices.Values) if(v.Token==token && v.Last!=null) return v.Last.UnitId;
+        string full=token+":"+BoltIndexOf(rawPath);
+        foreach(var v in devices.Values) {
+            if(v.Last==null) continue;
+            if(v.Token==full || (token=="c548" && v.Token.EndsWith(":c548"))) return v.Last.UnitId;
+        }
         return null;
+    }
+    static string BoltIndexOf(string path) {
+        if(path==null) return "";
+        var m=System.Text.RegularExpressions.Regex.Match(path.ToLowerInvariant(),@"mi_02&col(\d+)");
+        if(!m.Success) m=System.Text.RegularExpressions.Regex.Match(path.ToLowerInvariant(),@"pid_c548[^#]*#([0-9a-f&]+)");
+        return m.Success ? m.Groups[1].Value : "";
     }
     static string TokenOf(string path) {
         if(path==null) return null;
