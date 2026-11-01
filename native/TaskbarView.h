@@ -51,7 +51,7 @@ size_t g_elementOffset=0;
 struct View {
     Panel parent{nullptr}; Border host{nullptr}; TextBlock text{nullptr}; ToolTip tooltip{nullptr};
     Border pill{nullptr}; TextBlock suffix{nullptr},tooltipName{nullptr},tooltipValue{nullptr},tooltipStatus{nullptr},tooltipConnection{nullptr};
-    TextBlock valueUnit{nullptr};
+    TextBlock valueUnit{nullptr},tooltipOther{nullptr};
     Grid tooltipTrack{nullptr}; Border trackBackground{nullptr}, tooltipFill{nullptr};
     Windows::UI::Xaml::Shapes::Rectangle tickHigh{nullptr}, tickCritical{nullptr};
     FontIcon statusGlyph{nullptr};
@@ -227,7 +227,9 @@ bool Insert(FrameworkElement const& root,int position) {
     v->tooltipTrack.Children().Append(v->trackBackground); v->tooltipTrack.Children().Append(v->tooltipFill);
     v->tooltipTrack.Children().Append(v->tickHigh); v->tooltipTrack.Children().Append(v->tickCritical);
     v->tooltipConnection=TextBlock(); v->tooltipConnection.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipConnection.FontSize(11.0); v->tooltipConnection.Opacity(0.70);
-    card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(statusRow); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipConnection);
+    // Companion mouse summary fed by tooltip line 1; hidden for single-mouse setups.
+    v->tooltipOther=TextBlock(); v->tooltipOther.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipOther.FontSize(11.0); v->tooltipOther.Opacity(0.70); v->tooltipOther.Margin({0,4,0,0}); v->tooltipOther.Visibility(Visibility::Collapsed);
+    card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(statusRow); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipConnection); card.Children().Append(v->tooltipOther);
     v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({8,8,8,8}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->host,v->tooltip);
     v->menu=MenuFlyout();
     auto iconFor=[](wchar_t const* glyph){ FontIcon i; i.FontFamily(FontFamily(L"Segoe MDL2 Assets")); i.Glyph(glyph); return i; };
@@ -300,7 +302,12 @@ void Update(Work& work) {
     v.baseTop=fillTop; v.baseBottom=fillBottom; v.baseStroke=stroke;
     PaintPill(v);
     std::wstring detail(s.tooltip);
-    v.tooltipName.Text(detail.substr(0,detail.find(L'\n')));
+    size_t nl=detail.find(L'\n');
+    v.tooltipName.Text(nl==std::wstring::npos ? detail : detail.substr(0,nl));
+    if(nl!=std::wstring::npos && nl+1<detail.size()) {
+        v.tooltipOther.Visibility(Visibility::Visible);
+        v.tooltipOther.Text(detail.substr(nl+1));
+    } else v.tooltipOther.Visibility(Visibility::Collapsed);
     v.tooltipValue.Text(std::to_wstring(s.percent)+L"%");
     v.tooltipValue.Foreground(SolidColorBrush(color));
     std::wstring charge;
@@ -325,6 +332,7 @@ void Update(Work& work) {
     v.valueUnit.Foreground(SolidColorBrush(muted));
     v.tooltipStatus.Foreground(SolidColorBrush(s.state==2 ? (light ? Color{255,145,96,18} : Color{255,235,193,111}) : muted));
     v.tooltipConnection.Foreground(SolidColorBrush(muted));
+    v.tooltipOther.Foreground(SolidColorBrush(muted));
     v.trackBackground.Background(SolidColorBrush(light ? Color{255,229,237,246} : Color{255,49,64,82}));
     v.tooltipFill.Background(SolidColorBrush(s.percent<=20 ? color : accent));
     v.tooltipFill.Width(196.0*s.percent/100.0);
@@ -336,7 +344,7 @@ void Update(Work& work) {
     work.health+=L" style=mist-blue pillWidth="+std::to_wstring(v.pill.ActualWidth())+L" pillHeight="+std::to_wstring(v.pill.ActualHeight())+L" numberWidth="+std::to_wstring(v.text.ActualWidth())+L" suffixWidth="+std::to_wstring(v.suffix.ActualWidth());
     work.health+=L" state="+std::to_wstring(s.state)+L" textRGB="+std::to_wstring(color.R)+L","+std::to_wstring(color.G)+L","+std::to_wstring(color.B);
     auto solidRGB=[](Windows::UI::Xaml::Shapes::Rectangle const& r){ auto b=r.Fill().as<SolidColorBrush>(); return std::to_wstring(b.Color().R)+L","+std::to_wstring(b.Color().G)+L","+std::to_wstring(b.Color().B); };
-    work.health+=L" tickHigh="+solidRGB(v.tickHigh)+L" tickCritical="+solidRGB(v.tickCritical);
+    work.health+=L" tickHigh="+solidRGB(v.tickHigh)+L" tickCritical="+solidRGB(v.tickCritical)+L" other="+(v.tooltipOther.Visibility()==Visibility::Visible?L"1":L"0");
 }
 
 LRESULT CALLBACK DispatchHook(int code,WPARAM wParam,LPARAM lParam) {

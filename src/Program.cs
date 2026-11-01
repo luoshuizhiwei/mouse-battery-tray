@@ -13,7 +13,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("鼠标电量")]
-[assembly: System.Reflection.AssemblyVersion("3.6.3.0")]
+[assembly: System.Reflection.AssemblyVersion("3.7.0.0")]
 namespace MouseBattery {
 internal static class Startup {
     const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -44,9 +44,9 @@ internal static class Program {
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
         if(args.Length==2 && args[0]=="--diagnose") {
             var trace=new StringBuilder(); var source=new BatterySource { Trace=delegate(string line) { trace.AppendLine(line); } };
-            BatteryReading reading=source.Poll();
-            trace.AppendLine(reading==null ? "ERROR="+source.LastError : string.Format("OK {0} {1}% {2} {3} unit={4}",reading.Name,reading.Percent,reading.ChargeText,reading.Connection,reading.UnitId));
-            File.WriteAllText(args[1],trace.ToString(),Encoding.UTF8); return reading==null ? 1 : 0;
+            var readings=source.Poll(0);
+            trace.AppendLine(readings.Count==0 ? "ERROR="+source.LastError : string.Join("\n",Array.ConvertAll(readings.ToArray(),delegate(BatteryReading r) { return string.Format("OK {0} {1}% {2} {3} unit={4}",r.Name,r.Percent,r.ChargeText,r.Connection,r.UnitId); })));
+            File.WriteAllText(args[1],trace.ToString(),Encoding.UTF8); return readings.Count==0 ? 1 : 0;
         }
         bool created;
         using(var single=new Mutex(true,@"Local\MouseBatteryTray.Instance.1",out created)) {
@@ -213,6 +213,12 @@ internal sealed class ToggleSwitch : CheckBox {
     protected override void OnCheckedChanged(EventArgs e) { Invalidate(); base.OnCheckedChanged(e); }
     protected override void OnTextChanged(EventArgs e) { Invalidate(); base.OnTextChanged(e); }
 }
+// Never shown; exists to receive WM_INPUT while other windows have focus
+// (RIDEV_INPUTSINK) so the tool can tell which mouse the user is moving.
+internal sealed class MessageWindow : Form {
+    public Action<Message> OnMessage;
+    protected override void WndProc(ref Message m) { if(OnMessage!=null) OnMessage(m); base.WndProc(ref m); }
+}
 internal sealed class TrayContext : ApplicationContext {
     readonly BatterySource source=new BatterySource();
     readonly DisplayState state=new DisplayState();
@@ -225,7 +231,9 @@ internal sealed class TrayContext : ApplicationContext {
     int trayPercent=int.MinValue,trayPromoteAttempts;
     long nextTrayPromote;
     readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer();
-    readonly Form dispatcher=new Form();
+    readonly MessageWindow dispatcher=new MessageWindow();
+    readonly Dictionary<IntPtr,string> rawNames=new Dictionary<IntPtr,string>();
+    bool rawInputOk;
     readonly EventWaitHandle show;
     readonly EventWaitHandle quit=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ExitEventName);
     readonly EventWaitHandle toggleStartup=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ToggleEventName);
@@ -235,12 +243,17 @@ internal sealed class TrayContext : ApplicationContext {
     bool managerLight;
     int managerLevel;
     bool busy,closing,updatingSettings,disposed;
-    long nextPoll; int pollFailures,pollInterval=5000;
+    long nextPoll; int pollInterval=5000;
     string lastStatus="",failure="尚未读取";
     int position;
     bool showOnStart;
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window,int command);
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr window,int attribute,ref int value,int size);
+    [StructLayout(LayoutKind.Sequential)] struct RawInputDevice { public ushort UsagePage,Usage; public uint Flags; public IntPtr Target; }
+    [StructLayout(LayoutKind.Sequential)] struct RawInputHeader { public uint Type,Size; public IntPtr Device,WParam; }
+    [DllImport("user32.dll",SetLastError=true)] static extern bool RegisterRawInputDevices(RawInputDevice[] devices,uint count,uint size);
+    [DllImport("user32.dll")] static extern uint GetRawInputData(IntPtr hRawInput,uint command,byte[] data,ref uint size,uint headerSize);
+    [DllImport("user32.dll",SetLastError=true)] static extern uint GetRawInputDeviceInfoW(IntPtr hDevice,uint command,IntPtr data,ref uint size);
     internal TrayContext(EventWaitHandle signal,bool manage) {
         show=signal; showOnStart=manage;
         // A taskbar.dll fingerprint mismatch degrades to tray-icon display
@@ -255,6 +268,12 @@ internal sealed class TrayContext : ApplicationContext {
         }
         // Establish the UI synchronization context before starting asynchronous HID work.
         var handle=dispatcher.Handle;
+        // Raw input sink: every mouse movement reports its device so the pill
+        // can follow whichever mouse the user is actually holding.
+        var rid=new RawInputDevice[1];
+        rid[0]=new RawInputDevice { UsagePage=1,Usage=2,Flags=0x100,Target=handle }; // usagePage 1 generic desktop, usage 2 mouse, INPUTSINK
+        rawInputOk=RegisterRawInputDevices(rid,1,(uint)Marshal.SizeOf(typeof(RawInputDevice)));
+        dispatcher.OnMessage=delegate(Message m) { if(m.Msg==0x00FF) HandleRawInput(m); };
         Microsoft.Win32.SystemEvents.UserPreferenceChanged+=OnPreferenceChanged;
         timer.Interval=250; timer.Tick+=Tick; timer.Start();
         Directory.CreateDirectory(Path.GetDirectoryName(statusPath));
@@ -269,6 +288,29 @@ internal sealed class TrayContext : ApplicationContext {
             if(trayIcon!=null) { trayIconLight=light; trayPercent=int.MinValue; UpdateTrayIcon(state.Visible(uptime.ElapsedMilliseconds),state.Tooltip(uptime.ElapsedMilliseconds)); }
             if(manager!=null && !manager.IsDisposed) { manager.Close(); ShowManager(); }
         });
+    }
+    void HandleRawInput(Message m) {
+        try {
+            uint headerSize=(uint)Marshal.SizeOf(typeof(RawInputHeader));
+            var header=new byte[headerSize]; uint got=headerSize;
+            if(GetRawInputData(m.LParam,0x10000005,header,ref got,headerSize)==unchecked((uint)-1)) return;
+            IntPtr hDevice=(IntPtr)Marshal.ReadInt64(header,8);
+            string path;
+            if(!rawNames.TryGetValue(hDevice,out path)) {
+                uint size=0;
+                GetRawInputDeviceInfoW(hDevice,0x20000007,IntPtr.Zero,ref size);
+                if(size==0) { rawNames[hDevice]=null; return; }
+                IntPtr buf=Marshal.AllocHGlobal((int)size);
+                try {
+                    if(GetRawInputDeviceInfoW(hDevice,0x20000007,buf,ref size)==unchecked((uint)-1)) { rawNames[hDevice]=null; return; }
+                    path=Marshal.PtrToStringUni(buf);
+                } finally { Marshal.FreeHGlobal(buf); }
+                rawNames[hDevice]=path;
+            }
+            if(path==null) return;
+            string key=state.KeyForRawPath(path.ToLowerInvariant());
+            if(key!=null) state.SetActive(key);
+        } catch { }
     }
     internal static string ShortHash(string reason) {
         if(reason==null) return "详见 data\\status.txt";
@@ -289,16 +331,15 @@ internal sealed class TrayContext : ApplicationContext {
     private async void Poll() {
         busy=true;
         try {
-            BatteryReading result=await Task.Run(delegate { return source.Poll(); });
+            List<BatteryReading> result=await Task.Run(delegate { return source.Poll(uptime.ElapsedMilliseconds); });
             if(closing) return;
-            state.Apply(result,uptime.ElapsedMilliseconds);
-            if(result!=null) publisher.MarkSuccess();
+            state.Apply(result.ToArray(),uptime.ElapsedMilliseconds);
+            state.MarkFailed(source.FailedPaths.ToArray(),uptime.ElapsedMilliseconds);
+            if(result.Count>0) publisher.MarkSuccess();
             failure=source.LastError;
-            // A sleeping link answers nothing; retrying it every 5 s keeps a
-            // request parked on the RF hop most of the time. Back off while it
-            // keeps timing out so motion gets the link back.
-            if(result!=null) { pollFailures=0; pollInterval=5000; }
-            else { pollFailures++; pollInterval=Math.Min(10000,5000*pollFailures); }
+            // Per-device backoff lives inside BatterySource; the outer cadence
+            // only reacts to whether anything at all answered this cycle.
+            pollInterval=result.Count>0 ? 5000 : Math.Min(10000,pollInterval+5000);
         } catch(Exception e) {
             // An unexpected escape from the poll task must not tear down the
             // resident process; route it to the same visible error surface as
@@ -322,7 +363,7 @@ internal sealed class TrayContext : ApplicationContext {
         }
         string status=visible ? text : "未连接或电量暂不可用\n"+failure;
         if(manager!=null && !manager.IsDisposed) UpdateManagerDisplay(visible);
-        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nPollInterval="+pollInterval+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
+        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nActiveKey="+(state.ActiveKey??"(none)")+"\nRawInput="+(rawInputOk?"on":"off")+"\nDevices="+state.Describe(now)+"\nPollInterval="+pollInterval+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
         if(diagnostic!=lastStatus) {
             try { File.WriteAllText(statusPath,DateTimeOffset.Now.ToString("o")+"\n"+diagnostic,Encoding.UTF8); }
             catch(IOException ex) { ShowFileError(ex.Message); }
@@ -361,7 +402,7 @@ internal sealed class TrayContext : ApplicationContext {
         string tip=visible ? text.Replace("\n"," · ") : "鼠标电量不可用";
         if(tip.Length>63) tip=tip.Substring(0,63);
         trayIcon.Text=tip;
-        int percent=visible && state.Last!=null ? state.Last.Percent : -1;
+        int percent=visible && state.Displayed(uptime.ElapsedMilliseconds)!=null ? state.Displayed(uptime.ElapsedMilliseconds).Percent : -1;
         if(percent==trayPercent) return;
         trayPercent=percent;
         if(trayIconImage!=null) trayIconImage.Dispose();
@@ -411,13 +452,14 @@ internal sealed class TrayContext : ApplicationContext {
         Color amberText=managerLight ? Color.FromArgb(145,96,18) : Color.FromArgb(235,193,111);
         Color redText=managerLight ? Color.FromArgb(178,58,67) : Color.FromArgb(247,150,155);
 
-        if(visible && state.Last!=null) {
-            managerDevice.Text=state.Last.Name;
-            managerPercent.Text=state.Last.Percent+"";
-            managerPercent.ForeColor=state.Last.Percent<=10 ? redText : state.Last.Percent<=20 ? amberText : normalText;
-            managerCharge.Text=state.Last.ChargeText;
-            managerConnection.Text=state.Failed ? "正在重连 · 上次读数" : ("已连接 · "+(state.Last.Connection=="有线" ? "USB 有线" : "2.4G 无线"));
-            managerLevel=state.Last.Percent;
+        var shown=visible ? state.Displayed(uptime.ElapsedMilliseconds) : null;
+        if(shown!=null) {
+            managerDevice.Text=shown.Name;
+            managerPercent.Text=shown.Percent+"";
+            managerPercent.ForeColor=shown.Percent<=10 ? redText : shown.Percent<=20 ? amberText : normalText;
+            managerCharge.Text=shown.ChargeText;
+            managerConnection.Text=state.DisplayedFailed(uptime.ElapsedMilliseconds) ? "正在重连 · 上次读数" : ("已连接 · "+shown.Connection);
+            managerLevel=shown.Percent;
         } else {
             managerDevice.Text="鼠标设备未连接";
             managerPercent.Text="--";

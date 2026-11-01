@@ -19,8 +19,10 @@ class AppearanceProbe {
             for(int i=0;i<values.Length;i++) {
                 int value=values[i]; bool stale=i==values.Length-1;
                 var state=new DisplayState();
-                state.Apply(BatteryReading.Parse(new byte[]{(byte)value,4,0,0},"布局验证（模拟电量）","mock","2.4G"),0);
-                if(stale) state.Apply(null,1);
+                var mock=BatteryReading.Parse(new byte[]{(byte)value,4,0,0},"布局验证（模拟电量）","mock","2.4G");
+                mock.Path="hid#mock";
+                state.Apply(new[]{mock},0);
+                if(stale) state.MarkFailed(new[]{mock.Path},1);
                 publisher.MarkSuccess();publisher.Publish(state,1,0,false);
                 host.Maintain();Thread.Sleep(2200);host.Maintain();
                 string status=host.Status;

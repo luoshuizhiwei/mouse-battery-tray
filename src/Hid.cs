@@ -40,7 +40,8 @@ internal static class Native {
     [DllImport("kernel32.dll", SetLastError=true)] internal static extern IntPtr CreateEvent(IntPtr attributes, bool manualReset, bool initial, string name);
     [DllImport("kernel32.dll", SetLastError=true)] internal static extern uint WaitForSingleObject(IntPtr h, uint ms);
     [DllImport("kernel32.dll")] internal static extern bool CloseHandle(IntPtr h);
-    internal static List<HidDevice> Enumerate(List<string> rejected) {
+    internal static List<HidDevice> Enumerate(List<string> rejected) { return Enumerate(rejected,false); }
+    internal static List<HidDevice> Enumerate(List<string> rejected,bool allCollections) {
         var result = new List<HidDevice>(); Guid guid; HidD_GetHidGuid(out guid);
         IntPtr set = SetupDiGetClassDevs(ref guid, IntPtr.Zero, IntPtr.Zero, 18);
         if (set == new IntPtr(-1)) throw new Win32Exception();
@@ -57,7 +58,9 @@ internal static class Native {
                     Marshal.WriteInt32(detail, IntPtr.Size==8 ? 8 : 6);
                     if (!SetupDiGetDeviceInterfaceDetail(set, ref data, detail, size, out size, IntPtr.Zero)) throw new Win32Exception();
                     string path=Marshal.PtrToStringUni(IntPtr.Add(detail,4));
-                    if (path.IndexOf("vid_046d", StringComparison.OrdinalIgnoreCase)<0) continue;
+                    // USB/Bolt receivers use vid_046d; BLE HID nodes carry the
+                    // GATT-UUID form vid&02046d. Both are Logitech hardware.
+                    if (path.IndexOf("vid_046d", StringComparison.OrdinalIgnoreCase)<0 && path.IndexOf("vid&02046d", StringComparison.OrdinalIgnoreCase)<0) continue;
                     // A busy or inaccessible device must not break the whole scan.
                     try {
                         using (var h=CreateFile(path,0,3,IntPtr.Zero,3,0,IntPtr.Zero)) {
@@ -66,7 +69,7 @@ internal static class Native {
                             if (!HidD_GetAttributes(h,ref a)) throw new Win32Exception();
                             IntPtr p; if (!HidD_GetPreparsedData(h,out p)) throw new Win32Exception();
                             Caps c; try { if(HidP_GetCaps(p,out c)!=0x110000) throw new IOException("HidP_GetCaps failed"); } finally { HidD_FreePreparsedData(p); }
-                            if(c.UsagePage!=0xFF00 || c.InputLength<20 || c.OutputLength<20) continue;
+                            if(!allCollections && ((c.UsagePage!=0xFF00 && c.UsagePage!=0xFF43) || c.InputLength<20 || c.OutputLength<20)) continue;
                             var name=new StringBuilder(256);
                             if (!HidD_GetProductString(h,name,512)) throw new Win32Exception();
                             result.Add(new HidDevice { Path=path,Product=name.ToString(),Pid=a.Product,UsagePage=c.UsagePage,Usage=c.Usage,InputLength=c.InputLength,OutputLength=c.OutputLength });

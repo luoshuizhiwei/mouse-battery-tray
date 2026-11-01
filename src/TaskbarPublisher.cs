@@ -18,13 +18,15 @@ internal sealed class TaskbarPublisher : IDisposable {
     internal void Publish(DisplayState state,long now,int position,bool startup) {
         byte[] payload=new byte[Capacity];
         bool visible=state.Visible(now);
+        var shown=state.Displayed(now);
+        bool failed=state.DisplayedFailed(now);
         Buffer.BlockCopy(BitConverter.GetBytes(0x3254424Du),0,payload,0,4);
         Buffer.BlockCopy(BitConverter.GetBytes(lastSuccessTick),0,payload,8,8);
-        Buffer.BlockCopy(BitConverter.GetBytes(visible ? (state.Failed ? 2 : 1) : 0),0,payload,16,4);
-        if(state.Last!=null) {
-            Buffer.BlockCopy(BitConverter.GetBytes(state.Last.Percent),0,payload,20,4);
-            Buffer.BlockCopy(BitConverter.GetBytes(state.Last.Charging),0,payload,24,4);
-            Buffer.BlockCopy(BitConverter.GetBytes(state.Last.Connection=="有线" ? 1 : 2),0,payload,28,4);
+        Buffer.BlockCopy(BitConverter.GetBytes(visible ? (failed ? 2 : 1) : 0),0,payload,16,4);
+        if(shown!=null) {
+            Buffer.BlockCopy(BitConverter.GetBytes(shown.Percent),0,payload,20,4);
+            Buffer.BlockCopy(BitConverter.GetBytes(shown.Charging),0,payload,24,4);
+            Buffer.BlockCopy(BitConverter.GetBytes(shown.Connection=="有线" ? 1 : shown.Connection=="蓝牙" ? 3 : 2),0,payload,28,4);
         }
         Buffer.BlockCopy(BitConverter.GetBytes(processId),0,payload,32,4);
         Buffer.BlockCopy(BitConverter.GetBytes(position),0,payload,36,4);

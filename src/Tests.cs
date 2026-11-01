@@ -6,8 +6,10 @@ internal static class Tests {
     static int count;
     static void Check(bool valid,string name) { if(!valid) throw new Exception("FAIL: "+name); count++; Console.WriteLine("PASS: "+name); }
     static int Main(string[] args) {
-        var wired=BatteryReading.Parse(new byte[]{0x5F,8,1,1},"PRO X 2 DEX","02-02-5C-94","有线");
-        var wireless=BatteryReading.Parse(new byte[]{0x5F,8,0,0},"PRO X 2 DEX","02-02-5C-94","2.4G");
+        var wired=BatteryReading.Parse(new byte[]{0x5F,8,1,1},"PRO X 2 DEX","unit-prox","有线");
+        wired.Path="\\\\?\\hid#vid_046d&pid_c54d&mi_02#test";
+        var wireless=BatteryReading.Parse(new byte[]{0x5F,8,0,0},"PRO X 2 DEX","unit-prox","2.4G");
+        wireless.Path=wired.Path;
         Check(wired.Percent==95 && wired.ChargeText=="正在充电","captured wired report: 95%, charging");
         Check(wireless.Percent==95 && wireless.ChargeText=="未充电","captured wireless report: 95%, discharging");
         foreach(var bad in new[]{new byte[0],new byte[]{95,8,1},new byte[]{101,8,0,0},new byte[]{255,8,0,0}}) {
@@ -19,15 +21,34 @@ internal static class Tests {
         Check(BatteryReading.Parse(new byte[]{80,4,99,0},"","","").ChargeText.Contains("未知"),"unknown charging status stays explicitly unknown");
         var state=new DisplayState();
         Check(!state.Visible(0),"cold start with no device stays hidden");
-        state.Apply(wired,1000);
-        Check(state.Visible(1000) && state.Tooltip(1000).Contains("有线"),"valid device makes icon visible");
-        state.Apply(null,6000);
-        Check(state.Visible(15999) && state.Tooltip(6000).Contains("旧读数"),"retry keeps visibly marked old data within 15 seconds");
-        state.Apply(null,11000);
+        state.Apply(new[]{wired},1000);
+        Check(state.Visible(1000) && state.Tooltip(1000).Contains("PRO X 2 DEX") && !state.Tooltip(1000).Contains("\n"),"valid device makes icon visible with a single-line tooltip");
+        state.MarkFailed(new[]{wired.Path},6000);
+        Check(state.Visible(15999) && state.DisplayedFailed(15999),"failed attempts keep the readout marked within 15 seconds");
         Check(!state.Visible(16000),"repeated failure must not reset the 15-second expiry");
-        state.Apply(wireless,17000);
-        Check(state.Visible(17000) && !state.Tooltip(17000).Contains("旧读数") && state.Tooltip(17000).Contains("2.4G"),"reconnect restores icon and current transport");
+        state.Apply(new[]{wireless},17000);
+        Check(state.Visible(17000) && !state.DisplayedFailed(17000) && state.Displayed(17000).Connection=="2.4G","reconnect restores icon and current transport");
         Check(!state.Visible(32000),"blocked polling cannot display old data indefinitely");
+        var m750=BatteryReading.Parse(new byte[]{85,8,0,0},"Signature Plus M750 L","unit-m750","蓝牙");
+        m750.Path="\\\\?\\hid#{00001812-0000-1000-8000-00805f9b34fb}_dev_vid&02046d_pid&b02c_rev&0014";
+        var proX=BatteryReading.Parse(new byte[]{95,8,0,0},"PRO X 2 DEX","unit-prox","2.4G");
+        proX.Path=wired.Path;
+        state.Apply(new[]{proX,m750},40000);
+        Check(state.Tooltip(40000).Contains("PRO X 2 DEX") && state.Tooltip(40000).Contains("M750"),"hover lists every known mouse");
+        Check(state.Tooltip(40000).Contains("PRO X 2 DEX") && state.Tooltip(40000).Contains("Signature Plus M750 L") && state.Tooltip(40000).Contains("95% · 2.4G") && state.Displayed(40000).Percent==85,"tooltip lists both mice and the displayed reading carries its percent");
+        state.SetActive("unit-m750");
+        Check(state.Displayed(40000).UnitId=="unit-m750","raw-input active device wins the pill");
+        state.Apply(new[]{m750},52000);
+        Check(state.Displayed(52000).UnitId=="unit-m750","active device keeps priority while its reading is fresh");
+        state.Apply(new[]{proX},58000);
+        state.SetActive("unit-prox");
+        Check(state.Displayed(58000).UnitId=="unit-prox","switching mice moves the pill");
+        Check(state.Tooltip(58000).Contains("\nSignature Plus M750 L · 85% · 蓝牙"),"idle companion stays listed while its reading is recent");
+        state.SetActive("unit-m750");
+        Check(state.Displayed(70000).UnitId=="unit-prox","stale active falls back to the freshest device");
+        Check(!state.Visible(86000),"when every device goes quiet the readout hides");
+        Check(state.KeyForRawPath(@"\\?\hid#vid_046d&pid_c54d&mi_00#8&77f4c7&0&0000")=="unit-prox","raw input maps the receiver by pid token");
+        Check(state.KeyForRawPath(@"\\?\hid#{00001812-0000-1000-8000-00805f9b34fb}_dev_vid&02046d_pid&b02c_rev&0014_8&befd420")=="unit-m750","raw input maps the BLE gatt form");
         Check(TrayIcon.Foreground(21,false)==Color.White && TrayIcon.Foreground(20,false)!=Color.White,"20 percent warning boundary");
         Check(TrayIcon.Foreground(10,false)!=TrayIcon.Foreground(11,false),"10 percent critical boundary");
         Check(TrayIcon.Foreground(-1,false)==TrayIcon.Foreground(95,false),"missing reading keeps the normal color, not a threshold");

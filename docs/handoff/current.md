@@ -1,6 +1,38 @@
 # 鼠标电量工具 — 当前交接
 
-更新：2026-10-31，Asia/Hong_Kong。当前正式交付 v3.6.0，独立应用，“雾蓝·电量仪表”主题；任务栏读数与原生时钟同构。
+更新：2026-11-01，Asia/Hong_Kong。当前正式交付 v3.7.0，独立应用，“雾蓝·电量仪表”主题 + **双鼠标自动跟随**。
+
+## v3.7 增量（11-01）
+
+用户要求添加罗技 Signature Plus M750 L（AA 电池，Logi Options+ 配套）。实测侦察确定其接入形态后实现多设备支持，展示方案经用户确认：**任务栏自动跟随当前在用的鼠标，悬停卡列全两只**。
+
+### 侦察结论（全部实测，M750Probe/ListAll 证据在 robust-v3.2）
+
+- M750L 走**蓝牙 BLE**（BTHLEDEVICE，PID B02C），**不**在 C548 Bolt 接收器上（C548 在位但无配对应答）；设备实例 ID 为 GATT 前缀格式 `HID\{00001812-...}_dev_vid&02046d_pid&b02c...`——旧过滤器 `vid_046d` 因此漏掉它。
+- BLE 厂商集合 usage page **FF43**（非 FF00），in/out 20/20，长 0x11 报文可用，地址 255。
+- 电池特性与 PRO X 相同：0x1004 Unified Battery（idx 8），百分比位支持，实测 85%。
+- **BLE 休眠即断链**：HID 节点整体消失（GATT 节点保留 IsConnected=False），重连才回来；Win32_Battery/MSBatteryClass 不聚合它的电量，必须走 HID++。
+- 工具链新增：`M750Probe.cs`（Bolt 45s 守候抓取）、`ListAll.cs`（全集合枚举+BLE 握手，含 120s 循环重枚举）、`Native.Enumerate` 增加 allCollections 诊断参数。
+
+### 实现
+
+- `src/Hid.cs`：路径过滤接受 `vid&02046d`；厂商页放行 FF00+FF43。
+- `src/Battery.cs` 重写为多设备模型：`BatteryReading` 增加 Path；`BatterySource` 按接口路径维护每设备缓存/特性索引/失败退避（10s→20s→40s→60s，BLE 重现即复位）；候选白名单 C54D(addr 1)/C0A0(255)/B02C(255)/C548(addr 1，60s 退避——当前无配对，将来把 M750L 配到 Bolt 免改码)；身份白名单 PRO X（[9][10]=C0,A0）+ M750（[7][8]=B0,2C）；传输标签 有线/蓝牙/2.4G。
+- `DisplayState` 多视图：按 unit 序列号（identity[1..4]）跨重连稳定；`SetActive` 来自 Raw Input；显示规则=活动设备新鲜则显示之，否则最近成功的新鲜设备，全不新鲜隐藏（各自 15s 期限）；`Tooltip` 行0=显示设备名、行1=另一只摘要（≤15 分钟内，含"旧读数"标记）；`KeyForRawPath` 按 pid 令牌匹配 Raw Input 路径（两种实例格式同令牌）。
+- `src/Program.cs`：`MessageWindow`（WM_INPUT 透传）+ `RegisterRawInputDevices`（RIDEV_INPUTSINK 挂 dispatcher）+ `GetRawInputData/GetRawInputDeviceInfoW`（hDevice→路径缓存字典）；`--diagnose` 输出改为逐设备；诊断串新增 `ActiveKey=`/`RawInput=`/`Devices=`。
+- `src/TaskbarPublisher.cs`：快照字段取 `Displayed` 设备，transport 新增 3=蓝牙；**ABI 结构/共享内存名不变**，双鼠信息经 tooltip 行传递。
+- `native/TaskbarView.h`：悬停卡新增 `tooltipOther`（tooltip 行1，单设备 Collapsed）；transport==3 显示“已连接 · 蓝牙”。
+- 测试契约更新：Tests.cs 38→48 项（新增双设备用例：活动跟随/失效回落/全静默隐藏/两种 Raw Input 路径格式映射）；PublisherTests 10→12 项（蓝牙 transport=3、伴随设备 tooltip 行、平局取最新应用者）。
+- 版本 3.7.0.0；新内嵌 DLL SHA256 `4DD7F948AE347B7A25E7F1125FF81B647DE0C9367151078A90A6D0C6BD044C8F`；正式 EXE SHA256 `49EC09879B28419DC330F52AC20AC318CA472DCFC5B0F9F0797481F899CBB174`（v3.6.3 备份 `baseline\MouseBattery-v3.6.3.exe`）。
+
+### v3.7 验证
+
+- `test.ps1` 48 逻辑 + 12 IPC 全过；AppearanceProbe 8 项（新 DLL 重建，MarkFailed 模拟旧读数）全过，单设备 `other=0` 正确。
+- 真机上线即验证：M750L 使用中 → `ActiveKey=CD-4C-7D-86`（Raw Input 命中）、任务栏显示 M750L 85% 蓝牙、`RawInput=on`、`Native=initialized`；PRO X 休眠中未出现在列表（触碰后应出现并跟随，待用户日常使用观察）。
+- 构建期抓出并修复：`--diagnose` 旧 API、Raw Input P/Invoke 前缀笔误、降级托盘 `state.Last` 残留、Probe 旧读数模拟方式（MarkFailed 替代 Apply(null)）、测试断言的设备名空格与平局顺序问题。
+- 待观察：双鼠切换跟随的用户实际体验（status.txt 的 ActiveKey/Devices 行持续记录）；M750L 休眠断链/重连的日常节奏。
+
+## v3.6 增量（10-31 晚）
 
 ## v3.6 增量（10-31 晚）
 
