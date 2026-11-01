@@ -13,7 +13,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("鼠标电量")]
-[assembly: System.Reflection.AssemblyVersion("3.8.1.0")]
+[assembly: System.Reflection.AssemblyVersion("3.8.2.0")]
 namespace MouseBattery {
 internal static class Startup {
     const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -291,20 +291,27 @@ internal sealed class TrayContext : ApplicationContext {
     }
     void HandleRawInput(Message m) {
         try {
+            // RID_INPUT needs header + RAWMOUSE, not just the header; an
+            // undersized buffer plus a busy UI thread (settings opening) is a
+            // heap-corruption recipe this build actually hit (0xC0000374).
             uint headerSize=(uint)Marshal.SizeOf(typeof(RawInputHeader));
-            var header=new byte[headerSize]; uint got=headerSize;
-            if(GetRawInputData(m.LParam,0x10000005,header,ref got,headerSize)==unchecked((uint)-1)) return;
-            IntPtr hDevice=(IntPtr)Marshal.ReadInt64(header,8);
+            var data=new byte[256]; uint got=(uint)data.Length;
+            if(GetRawInputData(m.LParam,0x10000005,data,ref got,headerSize)==unchecked((uint)-1)) return;
+            if(got<headerSize) return;
+            IntPtr hDevice=(IntPtr)Marshal.ReadInt64(data,8);
+            if(hDevice==IntPtr.Zero) return;
             string path;
             if(!rawNames.TryGetValue(hDevice,out path)) {
                 uint size=0;
-                GetRawInputDeviceInfoW(hDevice,0x20000007,IntPtr.Zero,ref size);
-                if(size==0) { rawNames[hDevice]=null; return; }
-                IntPtr buf=Marshal.AllocHGlobal((int)size);
+                if(GetRawInputDeviceInfoW(hDevice,0x20000007,IntPtr.Zero,ref size)==unchecked((uint)-1) || size<2) { rawNames[hDevice]=null; return; }
+                var buf=Marshal.AllocHGlobal((int)size+16);
                 try {
-                    if(GetRawInputDeviceInfoW(hDevice,0x20000007,buf,ref size)==unchecked((uint)-1)) { rawNames[hDevice]=null; return; }
+                    uint cap=size+16;
+                    if(GetRawInputDeviceInfoW(hDevice,0x20000007,buf,ref cap)==unchecked((uint)-1) || cap>size+16) { rawNames[hDevice]=null; return; }
                     path=Marshal.PtrToStringUni(buf);
                 } finally { Marshal.FreeHGlobal(buf); }
+                rawNames[hDevice]=null;
+                if(path==null) return;
                 rawNames[hDevice]=path;
             }
             if(path==null) return;

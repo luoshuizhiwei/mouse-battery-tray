@@ -317,13 +317,8 @@ void Update(Work& work) {
         v.tooltipOther.Visibility(Visibility::Visible);
         v.tooltipOther.Text(detail.substr(nl+1));
     } else v.tooltipOther.Visibility(Visibility::Collapsed);
-    // Personality chip: tooltip's last line tags 电竞/办公 internally. The chip
-    // shows the product line instead of the category word, and only the color
-    // dot plus the gaming accent edge distinguish the two cards.
     bool gaming=detail.find(L"电竞")!=std::wstring::npos;
-    v.kindRow.Visibility(Visibility::Visible);
-    v.tooltipKind.Text(gaming ? L"PRO X 系列" : L"Signature 系列");
-    v.kindGlyph.Fill(SolidColorBrush(gaming ? accent : muted));
+
     v.tooltipValue.Text(std::to_wstring(s.percent)+L"%");
     v.tooltipValue.Foreground(SolidColorBrush(color));
     std::wstring charge;
@@ -333,6 +328,13 @@ void Update(Work& work) {
     v.tooltipConnection.Text(s.state==2 ? L"等待设备恢复连接" : s.transport==1 ? L"已连接 · USB 有线" : L"已连接 · 2.4G 无线");
     Color muted=light ? Color{255,113,128,148} : Color{255,159,177,198};
     Color accent=light ? Color{255,66,107,148} : Color{255,159,189,222};
+    // Personality chip: tooltip's last line tags 电竞/办公 internally. The chip
+    // shows the product line instead of the category word, and only the color
+    // dot plus the gaming accent edge distinguish the two cards.
+    
+    v.kindRow.Visibility(Visibility::Visible);
+    v.tooltipKind.Text(gaming ? L"PRO X 系列" : L"Signature 系列");
+    v.kindGlyph.Fill(SolidColorBrush(gaming ? accent : muted));
     // Threshold ticks carry meaning: amber once the fill crosses 20%, red at
     // 10%; neutral while the reading is healthy.
     Color neutralTick=light ? Color{110,113,128,148} : Color{110,169,189,222};
