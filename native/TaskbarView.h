@@ -51,7 +51,9 @@ size_t g_elementOffset=0;
 struct View {
     Panel parent{nullptr}; Border host{nullptr}; TextBlock text{nullptr}; ToolTip tooltip{nullptr};
     Border pill{nullptr}; TextBlock suffix{nullptr},tooltipName{nullptr},tooltipValue{nullptr},tooltipStatus{nullptr},tooltipConnection{nullptr};
-    TextBlock valueUnit{nullptr},tooltipOther{nullptr};
+    TextBlock valueUnit{nullptr},tooltipOther{nullptr},tooltipKind{nullptr};
+    Windows::UI::Xaml::Shapes::Rectangle kindGlyph{nullptr};
+    StackPanel kindRow{nullptr};
     Grid tooltipTrack{nullptr}; Border trackBackground{nullptr}, tooltipFill{nullptr};
     Windows::UI::Xaml::Shapes::Rectangle tickHigh{nullptr}, tickCritical{nullptr};
     FontIcon statusGlyph{nullptr};
@@ -115,11 +117,11 @@ XamlRoot TaskbarRoot(HWND window) {
     return element ? element.XamlRoot() : nullptr;
 }
 
+TextBlock StackKindText() {
+    TextBlock t; t.FontFamily(FontFamily(L"Segoe UI Variable Text")); t.FontSize(10.5); t.FontWeight(Windows::UI::Text::FontWeights::Medium()); t.Opacity(0.85);
+    return t;
+}
 // Pill coloring lives here so a pointer hover swaps the readout between its
-// two states immediately: at rest it is bare text like the native clock, and
-// only hovering wakes the glass pill — without waiting for the next 500 ms
-// data dispatch. Weight stays constant: SemiBold glyphs are wider, and the
-// centered readout would visibly jump on hover.
 void PaintPill(View& v) {
     if(!v.pill) return;
     if(!v.hover) {
@@ -229,7 +231,14 @@ bool Insert(FrameworkElement const& root,int position) {
     v->tooltipConnection=TextBlock(); v->tooltipConnection.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipConnection.FontSize(11.0); v->tooltipConnection.Opacity(0.70);
     // Companion mouse summary fed by tooltip line 1; hidden for single-mouse setups.
     v->tooltipOther=TextBlock(); v->tooltipOther.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipOther.FontSize(11.0); v->tooltipOther.Opacity(0.70); v->tooltipOther.Margin({0,4,0,0}); v->tooltipOther.Visibility(Visibility::Collapsed);
-    card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(statusRow); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipConnection); card.Children().Append(v->tooltipOther);
+    // Device-personality row: a small chip naming the line (电竞/办公), so two
+    // mice of very different characters never read as the same template.
+    v->kindGlyph=Windows::UI::Xaml::Shapes::Rectangle(); v->kindGlyph.Width(6); v->kindGlyph.Height(6); v->kindGlyph.RadiusX(3); v->kindGlyph.RadiusY(3); v->kindGlyph.VerticalAlignment(VerticalAlignment::Center); v->kindGlyph.Margin({0,0,5,0});
+    v->tooltipKind=StackKindText();
+    StackPanel kindRow; kindRow.Orientation(Orientation::Horizontal); kindRow.Margin({0,8,0,0});
+    kindRow.Children().Append(v->kindGlyph); kindRow.Children().Append(v->tooltipKind);
+    v->kindRow=kindRow; v->kindRow.Visibility(Visibility::Collapsed);
+    card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(statusRow); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipConnection); card.Children().Append(v->tooltipOther); card.Children().Append(v->kindRow);
     v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({8,8,8,8}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->host,v->tooltip);
     v->menu=MenuFlyout();
     auto iconFor=[](wchar_t const* glyph){ FontIcon i; i.FontFamily(FontFamily(L"Segoe MDL2 Assets")); i.Glyph(glyph); return i; };
@@ -308,10 +317,18 @@ void Update(Work& work) {
         v.tooltipOther.Visibility(Visibility::Visible);
         v.tooltipOther.Text(detail.substr(nl+1));
     } else v.tooltipOther.Visibility(Visibility::Collapsed);
+    // Personality chip: tooltip's last line is 电竞/办公. The chip colors the
+    // kind, accents the pill border only for the gaming line, and rewrites the
+    // charging row for AA-powered office mice.
+    bool gaming=detail.find(L"电竞")!=std::wstring::npos;
+    v.kindRow.Visibility(Visibility::Visible);
+    v.tooltipKind.Text(gaming ? L"电竞 · 可充电" : L"办公 · AA 电池");
+    v.kindGlyph.Fill(SolidColorBrush(gaming ? accent : muted));
     v.tooltipValue.Text(std::to_wstring(s.percent)+L"%");
     v.tooltipValue.Foreground(SolidColorBrush(color));
     std::wstring charge;
-    switch(s.charging) {case 0:charge=L"未充电";break;case 1:charge=L"正在充电";break;case 2:charge=L"慢速充电";break;case 3:charge=L"已充满";break;case 4:charge=L"充电异常";break;default:charge=L"未知充电状态 ("+std::to_wstring(s.charging)+L")";}
+    if(!gaming) charge=L"AA 电池供电";
+    else switch(s.charging) {case 0:charge=L"未充电";break;case 1:charge=L"正在充电";break;case 2:charge=L"慢速充电";break;case 3:charge=L"已充满";break;case 4:charge=L"充电异常";break;default:charge=L"未知充电状态 ("+std::to_wstring(s.charging)+L")";}
     v.tooltipStatus.Text(s.state==2 ? L"正在重连 · 上次读数" : charge);
     v.tooltipConnection.Text(s.state==2 ? L"等待设备恢复连接" : s.transport==1 ? L"已连接 · USB 有线" : L"已连接 · 2.4G 无线");
     Color muted=light ? Color{255,113,128,148} : Color{255,159,177,198};
@@ -327,7 +344,8 @@ void Update(Work& work) {
     if(charging) v.statusGlyph.Foreground(SolidColorBrush(accent));
     v.tooltip.RequestedTheme(light ? ElementTheme::Light : ElementTheme::Dark);
     v.tooltip.Background(SolidColorBrush(light ? Color{255,250,252,255} : Color{255,34,44,57}));
-    v.tooltip.BorderBrush(SolidColorBrush(light ? Color{255,220,230,242} : Color{255,49,64,82}));
+    // The gaming card carries an accent edge; the office card stays muted.
+    v.tooltip.BorderBrush(SolidColorBrush(gaming ? accent : (light ? Color{255,220,230,242} : Color{255,49,64,82})));
     v.tooltipName.Foreground(SolidColorBrush(muted));
     v.valueUnit.Foreground(SolidColorBrush(muted));
     v.tooltipStatus.Foreground(SolidColorBrush(s.state==2 ? (light ? Color{255,145,96,18} : Color{255,235,193,111}) : muted));
@@ -344,7 +362,7 @@ void Update(Work& work) {
     work.health+=L" style=mist-blue pillWidth="+std::to_wstring(v.pill.ActualWidth())+L" pillHeight="+std::to_wstring(v.pill.ActualHeight())+L" numberWidth="+std::to_wstring(v.text.ActualWidth())+L" suffixWidth="+std::to_wstring(v.suffix.ActualWidth());
     work.health+=L" state="+std::to_wstring(s.state)+L" textRGB="+std::to_wstring(color.R)+L","+std::to_wstring(color.G)+L","+std::to_wstring(color.B);
     auto solidRGB=[](Windows::UI::Xaml::Shapes::Rectangle const& r){ auto b=r.Fill().as<SolidColorBrush>(); return std::to_wstring(b.Color().R)+L","+std::to_wstring(b.Color().G)+L","+std::to_wstring(b.Color().B); };
-    work.health+=L" tickHigh="+solidRGB(v.tickHigh)+L" tickCritical="+solidRGB(v.tickCritical)+L" other="+(v.tooltipOther.Visibility()==Visibility::Visible?L"1":L"0");
+    work.health+=L" tickHigh="+solidRGB(v.tickHigh)+L" tickCritical="+solidRGB(v.tickCritical)+L" other="+(v.tooltipOther.Visibility()==Visibility::Visible?L"1":L"0")+L" kind="+(gaming?L"gaming":L"office");
 }
 
 LRESULT CALLBACK DispatchHook(int code,WPARAM wParam,LPARAM lParam) {

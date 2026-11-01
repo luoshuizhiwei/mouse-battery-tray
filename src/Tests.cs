@@ -7,9 +7,9 @@ internal static class Tests {
     static void Check(bool valid,string name) { if(!valid) throw new Exception("FAIL: "+name); count++; Console.WriteLine("PASS: "+name); }
     static int Main(string[] args) {
         var wired=BatteryReading.Parse(new byte[]{0x5F,8,1,1},"PRO X 2 DEX","unit-prox","有线");
-        wired.Path="\\\\?\\hid#vid_046d&pid_c54d&mi_02#test";
+        wired.Path="\\\\?\\hid#vid_046d&pid_c54d&mi_02#test"; wired.Gaming=true;
         var wireless=BatteryReading.Parse(new byte[]{0x5F,8,0,0},"PRO X 2 DEX","unit-prox","2.4G");
-        wireless.Path=wired.Path;
+        wireless.Path=wired.Path; wireless.Gaming=true;
         Check(wired.Percent==95 && wired.ChargeText=="正在充电","captured wired report: 95%, charging");
         Check(wireless.Percent==95 && wireless.ChargeText=="未充电","captured wireless report: 95%, discharging");
         foreach(var bad in new[]{new byte[0],new byte[]{95,8,1},new byte[]{101,8,0,0},new byte[]{255,8,0,0}}) {
@@ -22,20 +22,20 @@ internal static class Tests {
         var state=new DisplayState();
         Check(!state.Visible(0),"cold start with no device stays hidden");
         state.Apply(new[]{wired},1000);
-        Check(state.Visible(1000) && state.Tooltip(1000).Contains("PRO X 2 DEX") && !state.Tooltip(1000).Contains("\n"),"valid device makes icon visible with a single-line tooltip");
+        Check(state.Visible(1000) && state.Tooltip(1000).Contains("PRO X 2 DEX") && state.Tooltip(1000).EndsWith("电竞"),"valid device shows its name and personality tag");
         state.MarkFailed(new[]{wired.Path},6000);
         Check(state.Visible(15999) && state.DisplayedFailed(15999),"failed attempts keep the readout marked within 15 seconds");
         Check(!state.Visible(16000),"repeated failure must not reset the 15-second expiry");
         state.Apply(new[]{wireless},17000);
         Check(state.Visible(17000) && !state.DisplayedFailed(17000) && state.Displayed(17000).Connection=="2.4G","reconnect restores icon and current transport");
         Check(!state.Visible(32000),"blocked polling cannot display old data indefinitely");
-        var m750=BatteryReading.Parse(new byte[]{85,8,0,0},"Signature Plus M750 L","unit-m750","蓝牙");
+        var m750=BatteryReading.Parse(new byte[]{85,8,0,0},"Signature Plus M750 L","unit-m750","蓝牙"); m750.Gaming=false;
         m750.Path="\\\\?\\hid#{00001812-0000-1000-8000-00805f9b34fb}_dev_vid&02046d_pid&b02c_rev&0014";
-        var proX=BatteryReading.Parse(new byte[]{95,8,0,0},"PRO X 2 DEX","unit-prox","2.4G");
+        var proX=BatteryReading.Parse(new byte[]{95,8,0,0},"PRO X 2 DEX","unit-prox","2.4G"); proX.Gaming=true;
         proX.Path=wired.Path;
         state.Apply(new[]{proX,m750},40000);
         Check(state.Tooltip(40000).Contains("PRO X 2 DEX") && state.Tooltip(40000).Contains("M750"),"hover lists every known mouse");
-        Check(state.Tooltip(40000).Contains("PRO X 2 DEX") && state.Tooltip(40000).Contains("Signature Plus M750 L") && state.Tooltip(40000).Contains("95% · 2.4G") && state.Displayed(40000).Percent==85,"tooltip lists both mice and the displayed reading carries its percent");
+        Check(state.Tooltip(40000).Contains("PRO X 2 DEX") && state.Tooltip(40000).Contains("Signature Plus M750 L") && state.Tooltip(40000).Contains("95% · 2.4G") && state.Displayed(40000).Percent==85 && state.Tooltip(40000).EndsWith("办公"),"tooltip lists both mice and tags the displayed personality");
         state.SetActive("unit-m750");
         Check(state.Displayed(40000).UnitId=="unit-m750","raw-input active device wins the pill");
         state.Apply(new[]{m750},52000);

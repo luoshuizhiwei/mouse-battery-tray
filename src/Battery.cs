@@ -9,6 +9,10 @@ namespace MouseBattery {
 internal sealed class BatteryReading {
     public string Name, UnitId, Connection, Path;
     public int Percent, Charging;
+    // Device personality from its identity bytes: the PRO X line is a
+    // rechargeable gaming platform (charging states, RGB, high report rate),
+    // the Signature line an AA-powered office mouse (SmartWheel, no charging).
+    public bool Gaming;
     internal string ChargeText {
         get {
             switch(Charging) {
@@ -38,7 +42,7 @@ internal sealed class BatterySource {
         public string Name, Unit;
         public int Failures;
         public long NextTryMs;
-        public bool WasPresent;
+        public bool WasPresent, Gaming;
     }
     readonly Dictionary<string,Entry> entries=new Dictionary<string,Entry>();
     internal Action<string> Trace;
@@ -75,6 +79,9 @@ internal sealed class BatterySource {
         return (identity[7]==0x40 && identity[8]==0xB8 && identity[9]==0xC0 && identity[10]==0xA0)
             || (identity[7]==0xB0 && identity[8]==0x2C);
     }
+    internal static bool IsGamingIdentity(byte[] identity) {
+        return identity.Length>=13 && identity[7]==0x40 && identity[8]==0xB8 && identity[9]==0xC0 && identity[10]==0xA0;
+    }
 
     private BatteryReading Read(Entry e, bool discover) {
         using(var h=new HidConnection(e.Device)) {
@@ -84,6 +91,7 @@ internal sealed class BatterySource {
                 if(fw==0) throw new IOException("Device identity feature unavailable");
                 byte[] identity=h.Query(e.Address,fw,0);
                 if(!SupportedIdentity(identity)) throw new IOException("Unsupported paired device: "+BitConverter.ToString(identity,7,4));
+                e.Gaming=IsGamingIdentity(identity);
                 byte nf=h.Feature(e.Address,5);
                 if(nf==0) throw new IOException("Device name feature unavailable");
                 int length=h.Query(e.Address,nf,0)[0];
@@ -102,7 +110,9 @@ internal sealed class BatterySource {
                 if(caps.Length<2 || (caps[1]&2)==0) throw new IOException("Device does not report battery percentage");
                 e.Feature=bf;
             }
-            return BatteryReading.Parse(h.Query(e.Address,e.Feature,0x10),e.Name,e.Unit,ConnectionFor(e.Device));
+            var reading=BatteryReading.Parse(h.Query(e.Address,e.Feature,0x10),e.Name,e.Unit,ConnectionFor(e.Device));
+            reading.Gaming=e.Gaming;
+            return reading;
         }
     }
 
@@ -228,7 +238,8 @@ internal sealed class DisplayState {
     internal bool DisplayedFailed(long nowMs) { var v=DisplayedView(nowMs); return v!=null && v.Failed; }
     internal bool Visible(long nowMs) { return Displayed(nowMs)!=null; }
     // Line 0 names the displayed device for the native card; line 1 carries the
-    // idle companion so the hover card can list every mouse it knows.
+    // idle companion so the hover card can list every mouse it knows. Line 2
+    // tags the displayed device's personality so native can differ the card.
     internal string Tooltip(long nowMs) {
         var v=DisplayedView(nowMs);
         if(v==null) return "鼠标电量不可用";
@@ -238,6 +249,7 @@ internal sealed class DisplayState {
             if(x==v || x.Last==null || nowMs-x.LastSuccessMs>=900000) continue;
             text+="\n"+x.Last.Name+" · "+x.Last.Percent+"% · "+x.Last.Connection+((x.Failed || nowMs-x.LastSuccessMs>=15000) ? " · 旧读数" : "");
         }
+        text+="\n"+(v.Last.Gaming ? "电竞" : "办公");
         return text;
     }
     internal string Describe(long nowMs) {

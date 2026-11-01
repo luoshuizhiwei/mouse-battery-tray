@@ -13,7 +13,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("鼠标电量")]
-[assembly: System.Reflection.AssemblyVersion("3.7.0.0")]
+[assembly: System.Reflection.AssemblyVersion("3.8.0.0")]
 namespace MouseBattery {
 internal static class Startup {
     const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -457,8 +457,8 @@ internal sealed class TrayContext : ApplicationContext {
             managerDevice.Text=shown.Name;
             managerPercent.Text=shown.Percent+"";
             managerPercent.ForeColor=shown.Percent<=10 ? redText : shown.Percent<=20 ? amberText : normalText;
-            managerCharge.Text=shown.ChargeText;
-            managerConnection.Text=state.DisplayedFailed(uptime.ElapsedMilliseconds) ? "正在重连 · 上次读数" : ("已连接 · "+shown.Connection);
+            managerCharge.Text=shown.Gaming ? shown.ChargeText : "AA 电池供电";
+            managerConnection.Text=state.DisplayedFailed(uptime.ElapsedMilliseconds) ? "正在重连 · 上次读数" : ("已连接 · "+shown.Connection+(shown.Gaming ? " · 电竞" : " · 办公"));
             managerLevel=shown.Percent;
         } else {
             managerDevice.Text="鼠标设备未连接";
