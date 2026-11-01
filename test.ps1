@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $root = 'E:\MouseBattery'
 New-Item -ItemType Directory -Force "$root\build","$root\evidence" | Out-Null
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-$sources = @('Hid.cs','Battery.cs','TrayIcon.cs','Tests.cs') | ForEach-Object { Join-Path $PSScriptRoot "src\$_" }
+$sources = @('Hid.cs','Battery.cs','TrayIcon.cs','Tests.cs','Ui.cs') | ForEach-Object { Join-Path $PSScriptRoot "src\$_" }
 & $compiler /nologo /optimize+ /platform:x64 /target:exe /reference:System.Drawing.dll "/out:$root\build\Tests.exe" $sources
 if ($LASTEXITCODE -ne 0) { throw "Test build failed: $LASTEXITCODE" }
 & "$root\build\Tests.exe" "$root\evidence\icons.png" | Tee-Object -FilePath "$root\evidence\tests.txt"

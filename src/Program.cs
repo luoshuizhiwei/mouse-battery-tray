@@ -99,8 +99,8 @@ internal sealed class PositionPicker : Control {
     internal int Percent { set { percent=value; Invalidate(); } }
     internal void SetTheme(bool lightTheme,Color foreground,Color muted,Color accent,Color track) {
         light=lightTheme; barFill=track; captionColor=muted; pillText=foreground;
-        lineColor=light ? Color.FromArgb(216,227,240) : Color.FromArgb(58,74,94);
-        blockColor=light ? Color.FromArgb(206,218,233) : Color.FromArgb(62,78,100);
+        lineColor=Ui.GetColor(light, Ui.BaseLight, Ui.BaseDark);
+        blockColor=Ui.GetSurfaceColor(light);
         pillFill=light ? Color.FromArgb(46,66,107,148) : Color.FromArgb(58,159,189,222);
         anchorColor=light ? Color.FromArgb(160,113,128,148) : Color.FromArgb(160,159,177,198);
         hoverFill=light ? Color.FromArgb(28,66,107,148) : Color.FromArgb(40,159,189,222);
@@ -182,7 +182,7 @@ internal sealed class RoundedPanel : Panel {
     public RoundedPanel(Color fill,Color stroke) { fillColor=fill; strokeColor=stroke; SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint|ControlStyles.ResizeRedraw|ControlStyles.SupportsTransparentBackColor,true); }
     protected override void OnPaint(PaintEventArgs e) {
         var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using(var path=PositionPicker.RoundPath(new RectangleF(0.5f,0.5f,Width-1,Height-1),8)) {
+        using(var path=PositionPicker.RoundPath(new RectangleF(0.5f,0.5f,Width-1,Height-1),MouseBattery.Ui.CornerButton)) {
             using(var b=new SolidBrush(fillColor)) g.FillPath(b,path);
             using(var p=new Pen(strokeColor)) g.DrawPath(p,path);
         }
@@ -207,7 +207,7 @@ internal sealed class ToggleSwitch : CheckBox {
             using(var b=new SolidBrush(Checked ? onColor : offColor)) g.FillPath(b,path);
         }
         using(var b=new SolidBrush(knobColor)) g.FillEllipse(b,Checked ? 20 : 2,trackY+2,14,14);
-        if(!string.IsNullOrEmpty(Text)) TextRenderer.DrawText(g,Text,Font,new Point(46,(Height-FontHeight)/2),textColor);
+        if(!string.IsNullOrEmpty(Text)) TextRenderer.DrawText(g,Text,Font,new Point(46,(Height-Font.Height)/2),textColor);
         if(Focused) ControlPaint.DrawFocusRectangle(g,new Rectangle(0,(int)trackY-2,40,22));
     }
     protected override void OnCheckedChanged(EventArgs e) { Invalidate(); base.OnCheckedChanged(e); }
@@ -283,8 +283,8 @@ internal sealed class TrayContext : ApplicationContext {
     private void OnPreferenceChanged(object sender,Microsoft.Win32.UserPreferenceChangedEventArgs e) {
         dispatcher.BeginInvoke((MethodInvoker)delegate {
             bool light=AppsUseLightTheme();
-            if(light==managerLight) return;
-            managerLight=light;
+            if(light==light) return;
+            light=light;
             if(trayIcon!=null) { trayIconLight=light; trayPercent=int.MinValue; UpdateTrayIcon(state.Visible(uptime.ElapsedMilliseconds),state.Tooltip(uptime.ElapsedMilliseconds)); }
             if(manager!=null && !manager.IsDisposed) { manager.Close(); ShowManager(); }
         });
@@ -325,6 +325,9 @@ internal sealed class TrayContext : ApplicationContext {
         if(!match.Success) return "详见 data\\status.txt";
         string hash=match.Value.ToUpperInvariant();
         return hash.Substring(0,8)+"…"+hash.Substring(60,4);
+    }
+    static System.Drawing.Color GetColor(bool light, System.Drawing.Color c1, System.Drawing.Color c2) {
+        return light ? c1 : c2;
     }
     private void Tick(object sender,EventArgs e) {
         if(quit.WaitOne(0)) { ExitThread(); return; }
@@ -455,9 +458,9 @@ internal sealed class TrayContext : ApplicationContext {
         updatingSettings=false;
     }
     private void UpdateManagerDisplay(bool visible) {
-        Color normalText=managerLight ? Color.FromArgb(35,50,68) : Color.FromArgb(237,243,250);
-        Color amberText=managerLight ? Color.FromArgb(145,96,18) : Color.FromArgb(235,193,111);
-        Color redText=managerLight ? Color.FromArgb(178,58,67) : Color.FromArgb(247,150,155);
+        Color normalText=GetColor(managerLight, MouseBattery.Ui.TextLight, MouseBattery.Ui.TextDark);
+        Color amberText=GetColor(managerLight, MouseBattery.Ui.YellowLight, MouseBattery.Ui.YellowDark);
+        Color redText=GetColor(managerLight, MouseBattery.Ui.RedLight, MouseBattery.Ui.RedDark);
 
         var shown=visible ? state.Displayed(uptime.ElapsedMilliseconds) : null;
         if(shown!=null) {
@@ -482,28 +485,28 @@ internal sealed class TrayContext : ApplicationContext {
         if(manager==null || manager.IsDisposed) {
             bool light=AppsUseLightTheme();
             managerLight=light;
-            Color background=light ? Color.FromArgb(243,246,250) : Color.FromArgb(24,31,41);
-            Color surface=light ? Color.White : Color.FromArgb(34,44,57);
-            Color foreground=light ? Color.FromArgb(35,50,68) : Color.FromArgb(237,243,250);
-            Color muted=light ? Color.FromArgb(113,128,148) : Color.FromArgb(159,177,198);
-            Color accent=light ? Color.FromArgb(66,107,148) : Color.FromArgb(159,189,222);
-            Color track=light ? Color.FromArgb(229,237,246) : Color.FromArgb(49,64,82);
-            Color border=light ? Color.FromArgb(216,227,240) : Color.FromArgb(58,74,94);
+            Color background=light ? MouseBattery.Ui.BaseLight : MouseBattery.Ui.BaseDark;
+            Color surface=MouseBattery.Ui.GetSurfaceColor(light);
+            Color foreground=light ? MouseBattery.Ui.TextLight : MouseBattery.Ui.TextDark;
+            Color muted=light ? MouseBattery.Ui.SubtextLight : MouseBattery.Ui.SubtextDark;
+            Color accent=light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark;
+            Color track=light ? MouseBattery.Ui.GetSurfaceColor(light) : MouseBattery.Ui.SurfaceDark;
+            Color border=light ? MouseBattery.Ui.BorderLight : MouseBattery.Ui.BorderDark;
             // Degraded runs swap the position picker for an honest status banner.
             manager=new Form { Text="鼠标电量", AutoScaleMode=AutoScaleMode.None, Font=new Font("Microsoft YaHei UI",9f), ClientSize=new Size(432,degraded ? 356 : 378), BackColor=background,ForeColor=foreground, FormBorderStyle=FormBorderStyle.FixedDialog, MaximizeBox=false, MinimizeBox=false, StartPosition=FormStartPosition.CenterScreen };
             var mark=new Panel { Location=new Point(20,19),Size=new Size(24,24) };
             mark.Paint+=delegate(object sender,PaintEventArgs e) {
                 var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                using(var pen=new Pen(accent,1.6f)) using(var path=PositionPicker.RoundPath(new RectangleF(1,3,19,17),4.5f)) g.DrawPath(pen,path);
-                using(var b=new SolidBrush(accent)) { g.FillRectangle(b,21,8.5f,2.6f,6.5f); using(var path=PositionPicker.RoundPath(new RectangleF(4,6.5f,10,10),2f)) g.FillPath(b,path); }
+                using(var pen=new Pen(light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark,1.6f)) using(var path=PositionPicker.RoundPath(new RectangleF(1,3,19,17),4.5f)) g.DrawPath(pen,path);
+                using(var b=new SolidBrush(light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark)) { g.FillRectangle(b,21,8.5f,2.6f,6.5f); using(var path=PositionPicker.RoundPath(new RectangleF(4,6.5f,10,10),2f)) g.FillPath(b,path); }
             };
             var heading=new Label { Text="鼠标电量",Font=new Font("Microsoft YaHei UI",15f,FontStyle.Bold),Location=new Point(52,17),AutoSize=true };
             var subtitle=new Label { Text="任务栏与启动设置",ForeColor=muted,Location=new Point(53,52),AutoSize=true };
             var controls=new List<Control>(); controls.Add(mark); controls.Add(heading); controls.Add(subtitle);
             if(degraded) {
-                Color bannerBg=light ? Color.FromArgb(252,244,227) : Color.FromArgb(58,49,32);
-                Color bannerLine=light ? Color.FromArgb(230,197,131) : Color.FromArgb(106,90,48);
-                Color bannerText=light ? Color.FromArgb(122,86,20) : Color.FromArgb(235,193,111);
+                Color bannerBg=GetColor(light, Color.FromArgb(252,244,227), Color.FromArgb(58,49,32));
+                Color bannerLine=GetColor(light, Color.FromArgb(230,197,131), Color.FromArgb(106,90,48));
+                Color bannerText=GetColor(light, Color.FromArgb(122,86,20), Color.FromArgb(235,193,111));
                 var banner=new RoundedPanel(bannerBg,bannerLine) { Location=new Point(20,82),Size=new Size(392,46) };
                 var bannerLabel=new Label { Text="任务栏版本未适配，当前以托盘图标显示电量（指纹 "+ShortHash(degradedReason)+"），适配后自动恢复",Location=new Point(11,4),Size=new Size(370,38),ForeColor=bannerText };
                 banner.Controls.Add(bannerLabel);
@@ -519,12 +522,12 @@ internal sealed class TrayContext : ApplicationContext {
             managerTrack=new Panel { Location=new Point(16,88),Size=new Size(360,4),BackColor=track,AccessibleName="当前电量刻度" };
             managerTrack.Paint+=delegate(object sender,PaintEventArgs e) {
                 int level=Math.Max(0,managerLevel);
-                Color color=level<=20 ? (level<=10 ? (light ? Color.FromArgb(178,58,67) : Color.FromArgb(247,150,155)) : (light ? Color.FromArgb(145,96,18) : Color.FromArgb(235,193,111))) : accent;
+                Color color=level<=20 ? (level<=10 ? GetColor(light, MouseBattery.Ui.RedLight, MouseBattery.Ui.RedDark) : GetColor(light, MouseBattery.Ui.YellowLight, MouseBattery.Ui.YellowDark)) : light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark;
                 using(var brush=new SolidBrush(color)) e.Graphics.FillRectangle(brush,0,0,managerTrack.Width*level/100f,managerTrack.Height);
                 // Same threshold-tick language as the hover card: a crossed
                 // mark lights up, healthy marks stay neutral.
-                Color highTick=level<=20 ? (light ? Color.FromArgb(190,145,96,18) : Color.FromArgb(190,235,193,111)) : border;
-                Color critTick=level<=10 ? (light ? Color.FromArgb(200,178,58,67) : Color.FromArgb(200,247,150,155)) : highTick;
+                Color highTick=level<=20 ? GetColor(light, MouseBattery.Ui.YellowLight, MouseBattery.Ui.YellowDark) : border;
+                Color critTick=level<=10 ? GetColor(light, MouseBattery.Ui.RedLight, MouseBattery.Ui.RedDark) : highTick;
                 using(var b=new SolidBrush(highTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.8f,0,1,managerTrack.Height);
                 using(var b=new SolidBrush(critTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.9f,0,1,managerTrack.Height);
             };
@@ -533,7 +536,7 @@ internal sealed class TrayContext : ApplicationContext {
             int rowY;
             if(!degraded) {
                 positionPicker=new PositionPicker { Location=new Point(20,200),Size=new Size(392,62) };
-                positionPicker.SetTheme(light,foreground,muted,accent,track);
+                positionPicker.SetTheme(light,foreground,muted,light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark,track);
                 positionPicker.Position=position;
                 positionPicker.PositionChanged+=delegate {
                     int selected=positionPicker.Position;
@@ -544,14 +547,14 @@ internal sealed class TrayContext : ApplicationContext {
                 controls.Add(positionPicker);
                 rowY=268;
             } else rowY=250;
-            managerStartup=new ToggleSwitch(accent,border,light ? Color.White : Color.FromArgb(237,243,250),foreground) { Text="登录 Windows 后自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(20,rowY),Checked=Startup.Enabled };
+            managerStartup=new ToggleSwitch(GetColor(light, MouseBattery.Ui.AccentLight, MouseBattery.Ui.AccentDark),border,GetColor(light, Color.White, MouseBattery.Ui.TextDark),foreground) { Text="登录 Windows 后自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(20,rowY),Checked=Startup.Enabled };
             managerStartup.CheckedChanged+=delegate { if(!updatingSettings) SetStartup(managerStartup.Checked); };
             var note=new Label { Text=degraded ? "关闭窗口后继续在托盘显示" : "关闭窗口后继续在任务栏显示",Font=new Font("Microsoft YaHei UI",8.5f),ForeColor=muted,Location=new Point(21,rowY+35),AutoSize=true };
             int buttonY=degraded ? 310 : 332;
             var exit=new Button { Text="退出工具",Location=new Point(20,buttonY),Size=new Size(96,30),FlatStyle=FlatStyle.Flat,BackColor=background,ForeColor=muted };
             exit.FlatAppearance.BorderSize=0; exit.FlatAppearance.MouseOverBackColor=track; exit.Click+=delegate { ExitThread(); };
-            var close=new Button { Text="完成",AccessibleName="完成设置并关闭窗口",Location=new Point(316,buttonY),Size=new Size(96,30),FlatStyle=FlatStyle.Flat,BackColor=accent,ForeColor=light ? Color.White : background };
-            close.FlatAppearance.BorderSize=0; close.FlatAppearance.MouseOverBackColor=ControlPaint.Dark(accent); close.Click+=delegate { manager.Close(); };
+            var close=new Button { Text="完成",AccessibleName="完成设置并关闭窗口",Location=new Point(316,buttonY),Size=new Size(96,30),FlatStyle=FlatStyle.Flat,BackColor=light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark,ForeColor=GetColor(light, Color.White, MouseBattery.Ui.TextDark) };
+            close.FlatAppearance.BorderSize=0; close.FlatAppearance.MouseOverBackColor=ControlPaint.Dark(light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark); close.Click+=delegate { manager.Close(); };
             controls.Add(managerStartup); controls.Add(note); controls.Add(exit); controls.Add(close);
             manager.Controls.AddRange(controls.ToArray());
             // This programmatic layout is measured in 96-DPI units. Scale its

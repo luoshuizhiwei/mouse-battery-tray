@@ -66,6 +66,19 @@ struct View {
     bool hover=false;
     int position=-1;
 };
+
+// Catppuccin theme tokens - matches Ui.cs static class
+inline Color CatBase(bool light) { return light ? Color{255,239,241,245} : Color{255,30,30,46}; }       // #EFF1F5/#1E1E2E
+inline Color CatSurface(bool light) { return light ? Color{255,255,255,255} : Color{255,49,50,68}; }                  // #FFFFFF/#313244
+inline Color CatBorder(bool light) { return light ? Color{255,204,208,218} : Color{255,69,71,90}; }    // #CCD0DA/#45475A
+inline Color CatText(bool light) { return light ? Color{255,76,79,105} : Color{255,205,214,244}; }     // #4C4F69/#CDD6F4
+inline Color CatSubtext(bool light) { return light ? Color{255,108,111,133} : Color{255,166,173,200}; }// #6C6F85/#A6ADC8
+inline Color CatAccent(bool light) { return light ? Color{255,30,102,245} : Color{255,137,180,250}; }   // #1E66F5/#89B4FA
+inline Color CatYellow(bool light) { return light ? Color{255,223,142,29} : Color{255,249,226,175}; }   // #DF8E1D/#F9E2AF
+inline Color CatRed(bool light) { return light ? Color{255,210,15,57} : Color{255,243,139,168}; }       // #D20F39/#F38BA8
+inline Color CatMauve(bool light) { return light ? Color{255,136,57,239} : Color{255,203,166,247}; }    // #8839EF/#CBA6F7 PRO X
+inline Color CatSapphire(bool light) { return light ? Color{255,32,159,181} : Color{255,116,199,236}; }// #209FB5/#74C7EC M750L
+
 std::unique_ptr<View> g_view;
 
 HWND TaskbarWindow() {
@@ -206,9 +219,9 @@ bool Insert(FrameworkElement const& root,int position) {
     v->text=TextBlock(); v->text.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->text.FontSize(15.0); v->text.FontWeight(Windows::UI::Text::FontWeights::Normal()); v->text.VerticalAlignment(VerticalAlignment::Center);
     v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(12.0); v->suffix.Opacity(0.80); v->suffix.Margin({1,2,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center);
     number.Children().Append(v->text); number.Children().Append(v->suffix); v->pill.Child(number); v->host.Child(v->pill);
-    StackPanel card; card.Width(224); card.Padding({14,12,14,12});
+    StackPanel card; card.Width(232); card.Padding({16,14,16,14});
     v->tooltipName=TextBlock(); v->tooltipName.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipName.FontSize(12.0); v->tooltipName.FontWeight(Windows::UI::Text::FontWeights::Medium()); v->tooltipName.Opacity(0.85); v->tooltipName.Margin({0,0,0,6});
-    v->tooltipValue=TextBlock(); v->tooltipValue.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->tooltipValue.FontSize(30.0); v->tooltipValue.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); v->tooltipValue.VerticalAlignment(VerticalAlignment::Center);
+    v->tooltipValue=TextBlock(); v->tooltipValue.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->tooltipValue.FontSize(32.0); v->tooltipValue.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); v->tooltipValue.VerticalAlignment(VerticalAlignment::Center);
     // Editorial percent: the numeral stays threshold-colored, the unit recedes.
     StackPanel valueRow; valueRow.Orientation(Orientation::Horizontal);
     v->valueUnit=TextBlock(); v->valueUnit.Text(L"%"); v->valueUnit.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->valueUnit.FontSize(13.0); v->valueUnit.Opacity(0.70); v->valueUnit.Margin({3,7,0,0}); v->valueUnit.VerticalAlignment(VerticalAlignment::Center);
@@ -290,18 +303,18 @@ void Update(Work& work) {
     if(s.position==3) v.column.Width({ExternalLeftWidth()+56,GridUnitType::Pixel});
     v.text.Text(std::to_wstring(s.percent));
     bool light=v.host.ActualTheme()==ElementTheme::Light;
-    Color color=light ? Color{255,35,50,68} : Color{255,237,243,250};
+    Color color=CatText(light);
     Color fillTop=light ? Color{46,66,107,148} : Color{50,159,189,222};
     Color fillBottom=light ? Color{14,66,107,148} : Color{16,159,189,222};
     Color stroke=light ? Color{45,66,107,148} : Color{55,159,189,222};
     if(s.percent<=20) {
-        color=light ? Color{255,145,96,18} : Color{255,235,193,111};
+        color=CatYellow(light);
         fillTop=light ? Color{30,230,140,0} : Color{34,248,198,70};
         fillBottom=light ? Color{8,230,140,0} : Color{10,248,198,70};
         stroke=light ? Color{60,200,120,0} : Color{65,248,198,70};
     }
     if(s.percent<=10) {
-        color=light ? Color{255,178,58,67} : Color{255,247,150,155};
+        color=CatRed(light);
         fillTop=light ? Color{32,196,43,28} : Color{38,255,125,125};
         fillBottom=light ? Color{10,196,43,28} : Color{12,255,125,125};
         stroke=light ? Color{60,196,43,28} : Color{65,255,125,125};
@@ -326,8 +339,8 @@ void Update(Work& work) {
     else switch(s.charging) {case 0:charge=L"未充电";break;case 1:charge=L"正在充电";break;case 2:charge=L"慢速充电";break;case 3:charge=L"已充满";break;case 4:charge=L"充电异常";break;default:charge=L"未知充电状态 ("+std::to_wstring(s.charging)+L")";}
     v.tooltipStatus.Text(s.state==2 ? L"正在重连 · 上次读数" : charge);
     v.tooltipConnection.Text(s.state==2 ? L"等待设备恢复连接" : s.transport==1 ? L"已连接 · USB 有线" : L"已连接 · 2.4G 无线");
-    Color muted=light ? Color{255,113,128,148} : Color{255,159,177,198};
-    Color accent=light ? Color{255,66,107,148} : Color{255,159,189,222};
+    Color muted=CatSubtext(light);
+    Color accent=CatAccent(light);
     // Personality chip: tooltip's last line tags 电竞/办公 internally. The chip
     // shows the product line instead of the category word, and only the color
     // dot plus the gaming accent edge distinguish the two cards.
@@ -337,20 +350,20 @@ void Update(Work& work) {
     v.kindGlyph.Fill(SolidColorBrush(gaming ? accent : muted));
     // Threshold ticks carry meaning: amber once the fill crosses 20%, red at
     // 10%; neutral while the reading is healthy.
-    Color neutralTick=light ? Color{110,113,128,148} : Color{110,169,189,222};
-    Color highTick=s.percent<=20 ? (light ? Color{200,145,96,18} : Color{200,235,193,111}) : neutralTick;
-    Color critTick=s.percent<=10 ? (light ? Color{200,178,58,67} : Color{200,247,150,155}) : neutralTick;
+    Color neutralTick=muted;
+    Color highTick=s.percent<=20 ? CatYellow(light) : muted;
+    Color critTick=s.percent<=10 ? CatRed(light) : highTick;
     v.tickHigh.Fill(SolidColorBrush(highTick)); v.tickCritical.Fill(SolidColorBrush(critTick));
     bool charging=s.charging==1||s.charging==2;
     v.statusGlyph.Visibility(charging ? Visibility::Visible : Visibility::Collapsed);
     if(charging) v.statusGlyph.Foreground(SolidColorBrush(accent));
     v.tooltip.RequestedTheme(light ? ElementTheme::Light : ElementTheme::Dark);
-    v.tooltip.Background(SolidColorBrush(light ? Color{255,250,252,255} : Color{255,34,44,57}));
+    v.tooltip.Background(SolidColorBrush(CatSurface(light)));
     // The gaming card carries an accent edge; the office card stays muted.
-    v.tooltip.BorderBrush(SolidColorBrush(gaming ? accent : (light ? Color{255,220,230,242} : Color{255,49,64,82})));
+    v.tooltip.BorderBrush(SolidColorBrush(gaming ? accent : CatBorder(light)));
     v.tooltipName.Foreground(SolidColorBrush(muted));
     v.valueUnit.Foreground(SolidColorBrush(muted));
-    v.tooltipStatus.Foreground(SolidColorBrush(s.state==2 ? (light ? Color{255,145,96,18} : Color{255,235,193,111}) : muted));
+    v.tooltipStatus.Foreground(SolidColorBrush(s.state==2 ? CatYellow(light) : muted));
     v.tooltipConnection.Foreground(SolidColorBrush(muted));
     v.tooltipOther.Foreground(SolidColorBrush(muted));
     v.trackBackground.Background(SolidColorBrush(light ? Color{255,229,237,246} : Color{255,49,64,82}));
@@ -361,7 +374,7 @@ void Update(Work& work) {
     v.host.UpdateLayout();
     auto point=v.host.TransformToVisual(root.Content().as<UIElement>()).TransformPoint({0,0});
     work.health=L"visible position="+std::to_wstring(s.position)+L" percent="+std::to_wstring(s.percent)+L" x="+std::to_wstring(point.X)+L" y="+std::to_wstring(point.Y)+L" width="+std::to_wstring(v.host.ActualWidth())+L" height="+std::to_wstring(v.host.ActualHeight())+L" parent="+std::wstring(get_class_name(v.parent));
-    work.health+=L" style=mist-blue pillWidth="+std::to_wstring(v.pill.ActualWidth())+L" pillHeight="+std::to_wstring(v.pill.ActualHeight())+L" numberWidth="+std::to_wstring(v.text.ActualWidth())+L" suffixWidth="+std::to_wstring(v.suffix.ActualWidth());
+    work.health+=L" style=catppuccin pillWidth="+std::to_wstring(v.pill.ActualWidth())+L" pillHeight="+std::to_wstring(v.pill.ActualHeight())+L" numberWidth="+std::to_wstring(v.text.ActualWidth())+L" suffixWidth="+std::to_wstring(v.suffix.ActualWidth());
     work.health+=L" state="+std::to_wstring(s.state)+L" textRGB="+std::to_wstring(color.R)+L","+std::to_wstring(color.G)+L","+std::to_wstring(color.B);
     auto solidRGB=[](Windows::UI::Xaml::Shapes::Rectangle const& r){ auto b=r.Fill().as<SolidColorBrush>(); return std::to_wstring(b.Color().R)+L","+std::to_wstring(b.Color().G)+L","+std::to_wstring(b.Color().B); };
     work.health+=L" tickHigh="+solidRGB(v.tickHigh)+L" tickCritical="+solidRGB(v.tickCritical)+L" other="+(v.tooltipOther.Visibility()==Visibility::Visible?L"1":L"0")+L" kind="+(gaming?L"gaming":L"office");
