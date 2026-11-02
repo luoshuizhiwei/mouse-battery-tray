@@ -283,8 +283,8 @@ internal sealed class TrayContext : ApplicationContext {
     private void OnPreferenceChanged(object sender,Microsoft.Win32.UserPreferenceChangedEventArgs e) {
         dispatcher.BeginInvoke((MethodInvoker)delegate {
             bool light=AppsUseLightTheme();
-            if(light==light) return;
-            light=light;
+            if(light==managerLight) return;
+            managerLight=light;
             if(trayIcon!=null) { trayIconLight=light; trayPercent=int.MinValue; UpdateTrayIcon(state.Visible(uptime.ElapsedMilliseconds),state.Tooltip(uptime.ElapsedMilliseconds)); }
             if(manager!=null && !manager.IsDisposed) { manager.Close(); ShowManager(); }
         });

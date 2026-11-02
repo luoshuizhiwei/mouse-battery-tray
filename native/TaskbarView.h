@@ -350,9 +350,10 @@ void Update(Work& work) {
     v.kindGlyph.Fill(SolidColorBrush(gaming ? accent : muted));
     // Threshold ticks carry meaning: amber once the fill crosses 20%, red at
     // 10%; neutral while the reading is healthy.
-    Color neutralTick=muted;
-    Color highTick=s.percent<=20 ? CatYellow(light) : muted;
-    Color critTick=s.percent<=10 ? CatRed(light) : highTick;
+    // Ticks stay softer than the fill so "lighting up" reads as a layer, not a swap.
+    Color neutralTick=light ? Color{110,108,111,133} : Color{110,166,173,200};
+    Color highTick=s.percent<=20 ? (light ? Color{200,223,142,29} : Color{200,249,226,175}) : neutralTick;
+    Color critTick=s.percent<=10 ? (light ? Color{200,210,15,57} : Color{200,243,139,168}) : highTick;
     v.tickHigh.Fill(SolidColorBrush(highTick)); v.tickCritical.Fill(SolidColorBrush(critTick));
     bool charging=s.charging==1||s.charging==2;
     v.statusGlyph.Visibility(charging ? Visibility::Visible : Visibility::Collapsed);
