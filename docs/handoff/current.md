@@ -1,13 +1,27 @@
 # 鼠标电量工具 — 当前交接
 
-更新：2026-11-02, Asia/Hong_Kong。当前正式交付 **v4.0.0**，Catppuccin 主题重构完成。
+更新：2026-11-02, Asia/Hong_Kong。当前正式交付 **v4.1.x 设计修复轮**（AssemblyVersion 仍 3.8.5.0，未改）。
 
 ## 当前交付锚点
 
-- 正式 EXE：`E:\MouseBattery\app\MouseBattery.exe` (待晋升)，SHA256 `8F311D56422C3C30E1C1DADBAD3652DB5BE7796A5F55F172DEBFFCF217ACA065`
-- 内嵌原生 DLL SHA256: `2A07E8FA573C9430F7224D353F193FA6B3D19415BA43CB92F98726F0E1073517`
-- Git `main` 最新：（即将提交）
-- 备份：`E:\MouseBattery\robust-v3.2\baseline\` (保留 v3.8.3)
+- 正式 EXE：`E:\MouseBattery\app\MouseBattery.exe`，SHA256 `B52569502E1D014448730FC7832F0063A12855A60AD0776F9A275BE36C1CB34F`
+- 内嵌原生 DLL SHA256: `51F5EB89822E85754A5A3E58DFFF37815BC40786B6B9328C85D25A1273B347D8`
+- Git `main` 最新：设计修复轮 `34253c1`（其后有交接更新提交）
+- 备份：`E:\MouseBattery\robust-v3.2\baseline\`（`MouseBattery-E589774F.exe`、`MouseBattery-v410.exe`…）
+
+## v4.1.x 设计修复轮（2026-11-02）
+
+在 v4.1.0 之上按取证结果修复并晋升：
+
+- **N3 悬停卡竞态**：`Update()` 以输入签名守卫样式块，500ms 重绘不再打断已显示的卡。驻留测试：出现后连续 19 帧 / 跨 5 次重绘像素恒定。
+- **N2 阈值刻痕**：20%/10% 各自独立判定；修掉"≤10% 时 20% 刻痕回落中性"与探针里固化的错误期望。
+- **N5/N6/N7**：ToggleSwitch 五态 + 40×20 轨道（实测 40×21）、PositionPicker 去雾蓝改为 identity 镜像、`AcceptButton=CancelButton=完成`。
+- **快照尾部扩展**：`tooltip[216]` + `themeOverride@480` + 两个保留时间戳，sizeof 仍 512、既有偏移不变；生产恒写 0。
+- **L1 浅色警示墨**：真实浅色会话实测 20% 琥珀仅 1.65:1、10% 红 2.84:1；新增 `Ui.WarnInk/CritInk`（仅文字混合，玻璃/刻度仍纯 token），实测 2.45 / 3.04（保守下界，实色理论 3.86/4.86）。
+
+验证：`test.ps1` 48 逻辑 + 15 IPC；`AppearanceProbe` 8/8；T 表双主题（`E:\MouseBattery\design-sheet\run-20261102-184449` 深色、`run-20261102-190215`/`190945` 浅色）；R 表 48 格；设置窗 150% 实截。
+
+未验收：Q3/Q4 人眼判读、无降级横幅实截、200% DPI、真实重新登录。取证工具在 `tools/design-sheet/`（未进产品构建）。
 
 ## v4.1.0 设计实施完成（2026-11-02）
 
