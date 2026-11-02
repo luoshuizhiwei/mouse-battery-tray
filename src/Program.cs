@@ -13,7 +13,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("鼠标电量")]
-[assembly: System.Reflection.AssemblyVersion("3.8.5.0")]
+[assembly: System.Reflection.AssemblyVersion("3.8.6.0")]
 namespace MouseBattery {
 internal static class Startup {
     const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -272,7 +272,7 @@ internal sealed class TrayContext : ApplicationContext {
         // can follow whichever mouse the user is actually holding.
         var rid=new RawInputDevice[1];
         rid[0]=new RawInputDevice { UsagePage=1,Usage=2,Flags=0x100,Target=handle }; // usagePage 1 generic desktop, usage 2 mouse, INPUTSINK
-        rawInputOk=false; // BISECT: raw input disabled to isolate 0xC0000374
+        rawInputOk=RegisterRawInputDevices(rid,1,(uint)Marshal.SizeOf(typeof(RawInputDevice)));
         dispatcher.OnMessage=delegate(Message m) { if(m.Msg==0x00FF) HandleRawInput(m); };
         Microsoft.Win32.SystemEvents.UserPreferenceChanged+=OnPreferenceChanged;
         timer.Interval=250; timer.Tick+=Tick; timer.Start();
