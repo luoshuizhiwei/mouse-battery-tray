@@ -13,7 +13,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("鼠标电量")]
-[assembly: System.Reflection.AssemblyVersion("3.8.6.0")]
+[assembly: System.Reflection.AssemblyVersion("4.1.0.0")]
 namespace MouseBattery {
 internal static class Startup {
     const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -238,8 +238,9 @@ internal sealed class TrayContext : ApplicationContext {
     readonly EventWaitHandle quit=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ExitEventName);
     readonly EventWaitHandle toggleStartup=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ToggleEventName);
     readonly string statusPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"data","status.txt");
-    Form manager; Label managerDevice, managerConnection, managerPercent, managerUnit, managerCharge; CheckBox managerStartup; PositionPicker positionPicker;
+    Form manager; Label managerDevice, managerConnection, managerPercent, managerUnit, managerCharge, managerCompanion; Panel chip; CheckBox managerStartup; PositionPicker positionPicker;
     Panel managerTrack;
+    const float NotchHalf=0.75f; // notch centers on the 20%/10% mark (width 1.5)
     bool managerLight;
     int managerLevel;
     bool busy,closing,updatingSettings,disposed;
@@ -468,7 +469,8 @@ internal sealed class TrayContext : ApplicationContext {
             managerPercent.Text=shown.Percent+"";
             managerPercent.ForeColor=shown.Percent<=10 ? redText : shown.Percent<=20 ? amberText : normalText;
             managerCharge.Text=shown.Gaming ? shown.ChargeText : "AA 电池供电";
-            managerConnection.Text=state.DisplayedFailed(uptime.ElapsedMilliseconds) ? "正在重连 · 上次读数" : ("已连接 · "+shown.Connection+(shown.Gaming ? " · PRO X" : " · Signature"));
+            managerConnection.Text=state.DisplayedFailed(uptime.ElapsedMilliseconds) ? "正在重连 · 上次读数" : shown.Connection; // F8: product line lives in the chip, not the connection string
+            managerUnit.Visible=true;
             managerLevel=shown.Percent;
         } else {
             managerDevice.Text="鼠标设备未连接";
@@ -476,67 +478,98 @@ internal sealed class TrayContext : ApplicationContext {
             managerPercent.ForeColor=normalText;
             managerCharge.Text="暂无电量";
             managerConnection.Text=string.IsNullOrEmpty(failure) ? "等待设备连接" : failure;
+            managerUnit.Visible=false; // F7: "--" alone, never "-- %"
             managerLevel=-1;
         }
+        // Companion device line (design doc §3.1 priority 5): tooltip line 2.
+        string tip=state.Tooltip(uptime.ElapsedMilliseconds);
+        int nl=tip.IndexOf('\n');
+        bool hasCompanion=visible && nl>=0 && nl+1<tip.Length;
+        managerCompanion.Visible=hasCompanion;
+        if(hasCompanion) managerCompanion.Text=tip.Substring(nl+1);
         managerTrack.Invalidate();
         if(positionPicker!=null && !positionPicker.IsDisposed) { positionPicker.Percent=managerLevel; positionPicker.Invalidate(); }
+        if(manager!=null && !manager.IsDisposed) chip.Invalidate(); // product-line chip tracks the displayed device
     }
     private void ShowManager() {
         if(manager==null || manager.IsDisposed) {
             bool light=AppsUseLightTheme();
             managerLight=light;
-            Color background=light ? MouseBattery.Ui.BaseLight : MouseBattery.Ui.BaseDark;
-            Color surface=MouseBattery.Ui.GetSurfaceColor(light);
-            Color foreground=light ? MouseBattery.Ui.TextLight : MouseBattery.Ui.TextDark;
-            Color muted=light ? MouseBattery.Ui.SubtextLight : MouseBattery.Ui.SubtextDark;
-            Color accent=light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark;
-            Color track=light ? MouseBattery.Ui.GetSurfaceColor(light) : MouseBattery.Ui.SurfaceDark;
-            Color border=light ? MouseBattery.Ui.BorderLight : MouseBattery.Ui.BorderDark;
-            // Degraded runs swap the position picker for an honest status banner.
-            manager=new Form { Text="鼠标电量", AutoScaleMode=AutoScaleMode.None, Font=new Font("Microsoft YaHei UI",9f), ClientSize=new Size(432,degraded ? 356 : 378), BackColor=background,ForeColor=foreground, FormBorderStyle=FormBorderStyle.FixedDialog, MaximizeBox=false, MinimizeBox=false, StartPosition=FormStartPosition.CenterScreen };
-            var mark=new Panel { Location=new Point(20,19),Size=new Size(24,24) };
+            Color background=MouseBattery.Ui.Base(light);
+            Color surface=MouseBattery.Ui.Surface(light);
+            Color foreground=MouseBattery.Ui.Text(light);
+            Color muted=MouseBattery.Ui.Subtext(light);
+            Color accent=MouseBattery.Ui.Accent(light);
+            Color border=MouseBattery.Ui.Border(light);
+            Color scrim=MouseBattery.Ui.Scrim(light);
+            manager=new Form { Text="鼠标电量", AutoScaleMode=AutoScaleMode.None, Font=new Font("Microsoft YaHei UI",9f), ClientSize=new Size(MouseBattery.Ui.WidthWindow,degraded ? MouseBattery.Ui.HeightWindowDegraded : MouseBattery.Ui.HeightWindowNormal), BackColor=background,ForeColor=foreground, FormBorderStyle=FormBorderStyle.FixedDialog, MaximizeBox=false, MinimizeBox=false, StartPosition=FormStartPosition.CenterScreen };
+            var controls=new List<Control>();
+            int headerY=20;
+            var mark=new Panel { Location=new Point(20,headerY),Size=new Size(26,26) };
             mark.Paint+=delegate(object sender,PaintEventArgs e) {
                 var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                using(var pen=new Pen(light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark,1.6f)) using(var path=PositionPicker.RoundPath(new RectangleF(1,3,19,17),4.5f)) g.DrawPath(pen,path);
-                using(var b=new SolidBrush(light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark)) { g.FillRectangle(b,21,8.5f,2.6f,6.5f); using(var path=PositionPicker.RoundPath(new RectangleF(4,6.5f,10,10),2f)) g.FillPath(b,path); }
+                int level=Math.Max(0,managerLevel);
+                Color shell=level<=0 ? border : level<=10 ? MouseBattery.Ui.Red(light) : level<=20 ? MouseBattery.Ui.Yellow(light) : accent;
+                using(var pen=new Pen(shell,1.6f)) using(var path=PositionPicker.RoundPath(new RectangleF(1,2,20,20),5f)) g.DrawPath(pen,path);
+                using(var b=new SolidBrush(shell)) { g.FillRectangle(b,22,8,3,8); if(level>0) { int h=(int)(16*level/100f); if(h>1) using(var path=PositionPicker.RoundPath(new RectangleF(4.5f,3+16-h,13,h),2f)) g.FillPath(b,path); } }
             };
-            var heading=new Label { Text="鼠标电量",Font=new Font("Microsoft YaHei UI",15f,FontStyle.Bold),Location=new Point(52,17),AutoSize=true };
-            var subtitle=new Label { Text="任务栏与启动设置",ForeColor=muted,Location=new Point(53,52),AutoSize=true };
-            var controls=new List<Control>(); controls.Add(mark); controls.Add(heading); controls.Add(subtitle);
+            var heading=new Label { Text="鼠标电量",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeDisplayTitle),FontStyle.Bold),Location=new Point(58,headerY-2),AutoSize=true };
+            var subtitle=new Label { Text="任务栏与启动设置",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,210),Location=new Point(58,headerY+24),AutoSize=true };
+            controls.Add(mark); controls.Add(heading); controls.Add(subtitle);
+            int bodyY=76;
             if(degraded) {
-                Color bannerBg=GetColor(light, Color.FromArgb(252,244,227), Color.FromArgb(58,49,32));
-                Color bannerLine=GetColor(light, Color.FromArgb(230,197,131), Color.FromArgb(106,90,48));
-                Color bannerText=GetColor(light, Color.FromArgb(122,86,20), Color.FromArgb(235,193,111));
-                var banner=new RoundedPanel(bannerBg,bannerLine) { Location=new Point(20,82),Size=new Size(392,46) };
-                var bannerLabel=new Label { Text="任务栏版本未适配，当前以托盘图标显示电量（指纹 "+ShortHash(degradedReason)+"），适配后自动恢复",Location=new Point(11,4),Size=new Size(370,38),ForeColor=bannerText };
+                Color bannerBg=MouseBattery.Ui.Overlay(background,255,MouseBattery.Ui.WithAlpha(MouseBattery.Ui.Yellow(light),light?22:26));
+                Color bannerLine=MouseBattery.Ui.WithAlpha(MouseBattery.Ui.Yellow(light),105);
+                Color bannerText=light ? MouseBattery.Ui.YellowLight : MouseBattery.Ui.WithAlpha(MouseBattery.Ui.YellowDark,245);
+                var banner=new RoundedPanel(bannerBg,bannerLine) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,58) };
+                var rail=new Panel { Location=new Point(0,0),Size=new Size(3,58),BackColor=MouseBattery.Ui.WithAlpha(MouseBattery.Ui.Yellow(light),210) };
+                banner.Controls.Add(rail);
+                var bannerLabel=new Label { Text="任务栏版本未适配，当前以托盘图标显示电量（指纹 "+ShortHash(degradedReason)+"），适配后自动恢复",Location=new Point(20,6),Size=new Size(470,46),Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=bannerText };
                 banner.Controls.Add(bannerLabel);
                 controls.Add(banner);
+                bodyY+=70;
             }
-            var statusCard=new RoundedPanel(surface,border) { Location=new Point(20,degraded ? 136 : 88),Size=new Size(392,104) };
-            managerDevice=new Label { Location=new Point(16,14),Size=new Size(220,24),Font=new Font("Segoe UI Variable Text",11f,FontStyle.Bold) };
-            managerConnection=new Label { Location=new Point(16,47),Size=new Size(230,32),ForeColor=muted,AutoEllipsis=true };
-            // Instrument numeral: Display face for the readout, the unit recedes.
-            managerPercent=new Label { Location=new Point(206,4),Size=new Size(120,52),Font=new Font("Segoe UI Variable Display",30f,FontStyle.Bold),TextAlign=ContentAlignment.MiddleRight };
-            managerUnit=new Label { Text="%",Location=new Point(328,28),Size=new Size(46,26),Font=new Font("Segoe UI Variable Display",13f),ForeColor=muted,TextAlign=ContentAlignment.MiddleLeft };
-            managerCharge=new Label { Location=new Point(248,58),Size=new Size(128,22),ForeColor=muted,TextAlign=ContentAlignment.MiddleRight };
-            managerTrack=new Panel { Location=new Point(16,88),Size=new Size(360,4),BackColor=track,AccessibleName="当前电量刻度" };
+            var statusCard=new RoundedPanel(surface,border) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,172) };
+            managerDevice=new Label { Location=new Point(20,20),Size=new Size(320,24),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeHeading),FontStyle.Bold) };
+            chip=new Panel { Location=new Point(380,18),Size=new Size(120,20) };
+            chip.Paint+=delegate(object sender,PaintEventArgs e) {
+                var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var shownNow=state.Displayed(uptime.ElapsedMilliseconds);
+                bool gamingNow=shownNow!=null && shownNow.Gaming;
+                Color id=MouseBattery.Ui.Identity(gamingNow,light);
+                using(var b=new SolidBrush(MouseBattery.Ui.Overlay(surface,255,MouseBattery.Ui.WithAlpha(id,26)))) using(var path=PositionPicker.RoundPath(new RectangleF(0.5f,0.5f,chip.Width-1,chip.Height-1),10f)) g.FillPath(b,path);
+                using(var p=new Pen(MouseBattery.Ui.WithAlpha(id,110))) using(var path=PositionPicker.RoundPath(new RectangleF(0.5f,0.5f,chip.Width-1,chip.Height-1),10f)) g.DrawPath(p,path);
+                g.FillEllipse(new SolidBrush(id),8,7,6,6);
+                TextRenderer.DrawText(g,gamingNow?"PRO X":"Signature",new Font("Segoe UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeFaint),FontStyle.Bold),new Rectangle(18,0,chip.Width-20,chip.Height),id,TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
+            };
+            managerPercent=new Label { Location=new Point(20,46),Size=new Size(160,52),Font=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeNumeral),FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft };
+            managerUnit=new Label { Text="%",Location=new Point(180,72),Size=new Size(30,24),Font=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeUnit)),ForeColor=MouseBattery.Ui.WithAlpha(muted,205),TextAlign=ContentAlignment.MiddleLeft };
+            managerCharge=new Label { Location=new Point(300,55),Size=new Size(200,18),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),TextAlign=ContentAlignment.MiddleRight };
+            managerConnection=new Label { Location=new Point(300,75),Size=new Size(200,16),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,190),TextAlign=ContentAlignment.MiddleRight,AutoEllipsis=true };
+            managerTrack=new Panel { Location=new Point(20,114),Size=new Size(MouseBattery.Ui.WidthCardContent,MouseBattery.Ui.HeightTrack),BackColor=border,AccessibleName="当前电量刻度" };
+            managerCompanion=new Label { Location=new Point(20,134),Size=new Size(480,17),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,190),Visible=false };
             managerTrack.Paint+=delegate(object sender,PaintEventArgs e) {
                 int level=Math.Max(0,managerLevel);
-                Color color=level<=20 ? (level<=10 ? GetColor(light, MouseBattery.Ui.RedLight, MouseBattery.Ui.RedDark) : GetColor(light, MouseBattery.Ui.YellowLight, MouseBattery.Ui.YellowDark)) : light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark;
-                using(var brush=new SolidBrush(color)) e.Graphics.FillRectangle(brush,0,0,managerTrack.Width*level/100f,managerTrack.Height);
-                // Same threshold-tick language as the hover card: a crossed
-                // mark lights up, healthy marks stay neutral.
-                Color highTick=level<=20 ? GetColor(light, MouseBattery.Ui.YellowLight, MouseBattery.Ui.YellowDark) : border;
-                Color critTick=level<=10 ? GetColor(light, MouseBattery.Ui.RedLight, MouseBattery.Ui.RedDark) : highTick;
-                using(var b=new SolidBrush(highTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.8f,0,1,managerTrack.Height);
-                using(var b=new SolidBrush(critTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.9f,0,1,managerTrack.Height);
+                var shownNow=state.Displayed(uptime.ElapsedMilliseconds);
+                bool gamingNow=shownNow!=null && shownNow.Gaming;
+                Color fill=level<0 ? muted : level<=10 ? MouseBattery.Ui.Red(light) : level<=20 ? MouseBattery.Ui.Yellow(light) : MouseBattery.Ui.Identity(gamingNow,light);
+                using(var brush=new SolidBrush(fill)) e.Graphics.FillRectangle(brush,0,0,managerTrack.Width*level/100f,managerTrack.Height);
+                Color neutralTick=MouseBattery.Ui.WithAlpha(muted,110);
+                Color highTick=level>=0&&level<=20 ? MouseBattery.Ui.Yellow(light) : neutralTick;
+                Color critTick=level>=0&&level<=10 ? MouseBattery.Ui.Red(light) : highTick;
+                using(var b=new SolidBrush(highTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.2f-NotchHalf,0,MouseBattery.Ui.NotchWidth,managerTrack.Height);
+                using(var b=new SolidBrush(critTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.1f-NotchHalf,0,MouseBattery.Ui.NotchWidth,managerTrack.Height);
             };
-            statusCard.Controls.AddRange(new Control[]{managerDevice,managerConnection,managerPercent,managerUnit,managerCharge,managerTrack});
+            statusCard.Controls.AddRange(new Control[]{managerDevice,chip,managerPercent,managerUnit,managerCharge,managerConnection,managerTrack,managerCompanion});
             controls.Add(statusCard);
+            bodyY+=172+12;
             int rowY;
             if(!degraded) {
-                positionPicker=new PositionPicker { Location=new Point(20,200),Size=new Size(392,62) };
-                positionPicker.SetTheme(light,foreground,muted,light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark,track);
+                var cardB=new RoundedPanel(scrim,MouseBattery.Ui.WithAlpha(border,150)) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,134) };
+                var pickerLabel=new Label { Text="显示位置",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),Location=new Point(20,16),AutoSize=true };
+                cardB.Controls.Add(pickerLabel);
+                positionPicker=new PositionPicker { Location=new Point(20,40),Size=new Size(480,68) };
+                positionPicker.SetTheme(light,foreground,muted,accent,scrim);
                 positionPicker.Position=position;
                 positionPicker.PositionChanged+=delegate {
                     int selected=positionPicker.Position;
@@ -544,18 +577,22 @@ internal sealed class TrayContext : ApplicationContext {
                     catch(UnauthorizedAccessException e) { MessageBox.Show("无法保存位置："+e.Message,"鼠标电量"); }
                     catch(SecurityException e) { MessageBox.Show("无法保存位置："+e.Message,"鼠标电量"); }
                 };
-                controls.Add(positionPicker);
-                rowY=268;
-            } else rowY=250;
-            managerStartup=new ToggleSwitch(GetColor(light, MouseBattery.Ui.AccentLight, MouseBattery.Ui.AccentDark),border,GetColor(light, Color.White, MouseBattery.Ui.TextDark),foreground) { Text="登录 Windows 后自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(20,rowY),Checked=Startup.Enabled };
+                cardB.Controls.Add(positionPicker);
+                controls.Add(cardB);
+                rowY=bodyY+134+14;
+            } else rowY=bodyY+10;
+            managerStartup=new ToggleSwitch(accent,border,MouseBattery.Ui.OnAccent(light),foreground) { Text="登录 Windows 后自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(20,rowY),Checked=Startup.Enabled };
             managerStartup.CheckedChanged+=delegate { if(!updatingSettings) SetStartup(managerStartup.Checked); };
-            var note=new Label { Text=degraded ? "关闭窗口后继续在托盘显示" : "关闭窗口后继续在任务栏显示",Font=new Font("Microsoft YaHei UI",8.5f),ForeColor=muted,Location=new Point(21,rowY+35),AutoSize=true };
-            int buttonY=degraded ? 310 : 332;
-            var exit=new Button { Text="退出工具",Location=new Point(20,buttonY),Size=new Size(96,30),FlatStyle=FlatStyle.Flat,BackColor=background,ForeColor=muted };
-            exit.FlatAppearance.BorderSize=0; exit.FlatAppearance.MouseOverBackColor=track; exit.Click+=delegate { ExitThread(); };
-            var close=new Button { Text="完成",AccessibleName="完成设置并关闭窗口",Location=new Point(316,buttonY),Size=new Size(96,30),FlatStyle=FlatStyle.Flat,BackColor=light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark,ForeColor=GetColor(light, Color.White, MouseBattery.Ui.TextDark) };
-            close.FlatAppearance.BorderSize=0; close.FlatAppearance.MouseOverBackColor=ControlPaint.Dark(light ? MouseBattery.Ui.AccentLight : MouseBattery.Ui.AccentDark); close.Click+=delegate { manager.Close(); };
-            controls.Add(managerStartup); controls.Add(note); controls.Add(exit); controls.Add(close);
+            controls.Add(managerStartup);
+            var hairline=new Panel { Location=new Point(20,rowY+40),Size=new Size(MouseBattery.Ui.WidthCardWindow,1),BackColor=MouseBattery.Ui.WithAlpha(border,115) };
+            controls.Add(hairline);
+            var note=new Label { Text=degraded ? "关闭窗口后继续在托盘显示" : "关闭窗口后继续在任务栏显示",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMicro)),ForeColor=muted,Location=new Point(20,rowY+50),AutoSize=true };
+            int buttonY=rowY+78;
+            var exit=new Button { Text="退出工具",Location=new Point(MouseBattery.Ui.WidthWindow-20-96-12-96,buttonY),Size=new Size(96,34),FlatStyle=FlatStyle.Flat,BackColor=background,ForeColor=muted };
+            exit.FlatAppearance.BorderSize=0; exit.FlatAppearance.MouseOverBackColor=MouseBattery.Ui.GhostHover(light); exit.FlatAppearance.MouseDownBackColor=MouseBattery.Ui.GhostPressed(light); exit.Click+=delegate { ExitThread(); };
+            var close=new Button { Text="完成",AccessibleName="完成设置并关闭窗口",Location=new Point(MouseBattery.Ui.WidthWindow-20-96,buttonY),Size=new Size(96,34),FlatStyle=FlatStyle.Flat,BackColor=accent,ForeColor=MouseBattery.Ui.OnAccent(light) };
+            close.FlatAppearance.BorderSize=0; close.FlatAppearance.MouseOverBackColor=MouseBattery.Ui.AccentPlus(light); close.FlatAppearance.MouseDownBackColor=MouseBattery.Ui.Overlay(MouseBattery.Ui.Accent(light),255,MouseBattery.Ui.WithAlpha(foreground,54)); close.Click+=delegate { manager.Close(); };
+            controls.Add(note); controls.Add(exit); controls.Add(close);
             manager.Controls.AddRange(controls.ToArray());
             // This programmatic layout is measured in 96-DPI units. Scale its
             // bounds once; the font already uses the current display DPI.
@@ -563,12 +600,10 @@ internal sealed class TrayContext : ApplicationContext {
                 float uiScale=graphics.DpiX/96f;
                 manager.Scale(new SizeF(uiScale,uiScale));
             }
-            int darkCaption=light ? 0 : 1;
-            Marshal.ThrowExceptionForHR(DwmSetWindowAttribute(manager.Handle,20,ref darkCaption,4));
+            RefreshDisplay(); manager.Show();
+            ShowWindow(manager.Handle,1); manager.Activate();
         }
         RefreshDisplay(); manager.Show();
-        // A background launcher can suppress the first native ShowWindow call.
-        // Explicitly show again after WinForms has created/shown the form.
         ShowWindow(manager.Handle,1); manager.Activate();
     }
     protected override void ExitThreadCore() {

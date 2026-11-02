@@ -51,9 +51,10 @@ size_t g_elementOffset=0;
 struct View {
     Panel parent{nullptr}; Border host{nullptr}; TextBlock text{nullptr}; ToolTip tooltip{nullptr};
     Border pill{nullptr}; TextBlock suffix{nullptr},tooltipName{nullptr},tooltipValue{nullptr},tooltipStatus{nullptr},tooltipConnection{nullptr};
-    TextBlock valueUnit{nullptr},tooltipOther{nullptr},tooltipKind{nullptr};
-    Windows::UI::Xaml::Shapes::Rectangle kindGlyph{nullptr};
-    StackPanel kindRow{nullptr};
+    TextBlock valueUnit{nullptr},tooltipOther{nullptr};
+    Border statusWell{nullptr};
+    StackPanel statusLine{nullptr};
+    TextBlock statusRailText{nullptr}; // right-aligned transport text sharing ④'s rail
     Grid tooltipTrack{nullptr}; Border trackBackground{nullptr}, tooltipFill{nullptr};
     Windows::UI::Xaml::Shapes::Rectangle tickHigh{nullptr}, tickCritical{nullptr};
     FontIcon statusGlyph{nullptr};
@@ -78,6 +79,11 @@ inline Color CatYellow(bool light) { return light ? Color{255,223,142,29} : Colo
 inline Color CatRed(bool light) { return light ? Color{255,210,15,57} : Color{255,243,139,168}; }       // #D20F39/#F38BA8
 inline Color CatMauve(bool light) { return light ? Color{255,136,57,239} : Color{255,203,166,247}; }    // #8839EF/#CBA6F7 PRO X
 inline Color CatSapphire(bool light) { return light ? Color{255,32,159,181} : Color{255,116,199,236}; }// #209FB5/#74C7EC M750L
+// Derived roles (design doc §6.1) - alpha overlays of the bases above.
+inline Color CatIdentity(bool gaming,bool light) { return gaming ? CatMauve(light) : CatSapphire(light); }
+inline Color CatScrim(bool light) { return light ? Color{255,246,247,249} : Color{255,48,49,66}; }      // #F6F7F9 / #303142 (pre-composed)
+inline Color CatOnAccent(bool light) { return light ? CatSurface(light) : CatBase(light); }             // text on accent fills
+inline Color WithAlphaA(Color c,int a) { Color r=c; r.A=(uint8_t)(a>255?255:a); return r; }
 
 std::unique_ptr<View> g_view;
 
@@ -219,40 +225,39 @@ bool Insert(FrameworkElement const& root,int position) {
     v->text=TextBlock(); v->text.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->text.FontSize(15.0); v->text.FontWeight(Windows::UI::Text::FontWeights::Normal()); v->text.VerticalAlignment(VerticalAlignment::Center);
     v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(12.0); v->suffix.Opacity(0.80); v->suffix.Margin({1,2,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center);
     number.Children().Append(v->text); number.Children().Append(v->suffix); v->pill.Child(number); v->host.Child(v->pill);
-    StackPanel card; card.Width(232); card.Padding({16,14,16,14});
+    StackPanel card; card.Width(240); card.Padding({20,20,20,20});
     v->tooltipName=TextBlock(); v->tooltipName.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipName.FontSize(12.0); v->tooltipName.FontWeight(Windows::UI::Text::FontWeights::Medium()); v->tooltipName.Opacity(0.85); v->tooltipName.Margin({0,0,0,6});
-    v->tooltipValue=TextBlock(); v->tooltipValue.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->tooltipValue.FontSize(32.0); v->tooltipValue.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); v->tooltipValue.VerticalAlignment(VerticalAlignment::Center);
+    v->tooltipValue=TextBlock(); v->tooltipValue.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->tooltipValue.FontSize(40.0); v->tooltipValue.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); v->tooltipValue.VerticalAlignment(VerticalAlignment::Center);
     // Editorial percent: the numeral stays threshold-colored, the unit recedes.
     StackPanel valueRow; valueRow.Orientation(Orientation::Horizontal);
-    v->valueUnit=TextBlock(); v->valueUnit.Text(L"%"); v->valueUnit.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->valueUnit.FontSize(13.0); v->valueUnit.Opacity(0.70); v->valueUnit.Margin({3,7,0,0}); v->valueUnit.VerticalAlignment(VerticalAlignment::Center);
+    v->valueUnit=TextBlock(); v->valueUnit.Text(L"%"); v->valueUnit.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->valueUnit.FontSize(15.0); v->valueUnit.Opacity(0.80); v->valueUnit.Margin({4,0,0,6}); v->valueUnit.VerticalAlignment(VerticalAlignment::Bottom); // baseline-hug the numeral
     valueRow.Children().Append(v->tooltipValue); valueRow.Children().Append(v->valueUnit);
-    v->tooltipStatus=TextBlock(); v->tooltipStatus.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipStatus.FontSize(11.0); v->tooltipStatus.FontWeight(Windows::UI::Text::FontWeights::Normal());
-    v->tooltipStatus.Margin({0,4,0,0});
-    // Charging is the one state that earns a symbol; verified E945 bolt.
-    v->statusGlyph=FontIcon(); v->statusGlyph.Glyph(L"\uE945"); v->statusGlyph.FontFamily(FontFamily(L"Segoe MDL2 Assets")); v->statusGlyph.FontSize(12.0); v->statusGlyph.Margin({0,3,5,0}); v->statusGlyph.Visibility(Visibility::Collapsed);
+    v->tooltipStatus=TextBlock(); v->tooltipStatus.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipStatus.FontSize(12.0); v->tooltipStatus.FontWeight(Windows::UI::Text::FontWeights::Normal()); v->tooltipStatus.VerticalAlignment(VerticalAlignment::Center);
+    // Charging is the one state that earns a symbol; verified E945 bolt. The
+    // 18x18 identity-tinted well keeps the glyph centered (kills the old
+    // baseline mismatch) and doubles as the state's only "component".
+    v->statusWell=Border(); v->statusWell.Width(18); v->statusWell.Height(18); v->statusWell.CornerRadius({6,6,6,6}); v->statusWell.VerticalAlignment(VerticalAlignment::Center); v->statusWell.Margin({0,0,6,0}); v->statusWell.Visibility(Visibility::Collapsed);
+    v->statusGlyph=FontIcon(); v->statusGlyph.Glyph(L"\uE945"); v->statusGlyph.FontFamily(FontFamily(L"Segoe MDL2 Assets")); v->statusGlyph.FontSize(12.0);
+    v->statusWell.Child(v->statusGlyph);
     StackPanel statusRow; statusRow.Orientation(Orientation::Horizontal);
-    statusRow.Children().Append(v->statusGlyph); statusRow.Children().Append(v->tooltipStatus);
-    // Signature scale: threshold ticks at the 20% and 10% marks, drawn over
-    // both the track and the fill so the readout carries its own warning scale.
-    v->tooltipTrack=Grid(); v->tooltipTrack.Height(4); v->tooltipTrack.CornerRadius({2,2,2,2}); v->tooltipTrack.Margin({0,12,0,10});
-    v->trackBackground=Border(); v->trackBackground.CornerRadius({2,2,2,2});
-    v->tooltipFill=Border(); v->tooltipFill.HorizontalAlignment(HorizontalAlignment::Left); v->tooltipFill.CornerRadius({2,2,2,2});
-    v->tickHigh=Windows::UI::Xaml::Shapes::Rectangle(); v->tickHigh.Width(1); v->tickHigh.HorizontalAlignment(HorizontalAlignment::Left); v->tickHigh.Margin({156.8,1,0,1});
-    v->tickCritical=Windows::UI::Xaml::Shapes::Rectangle(); v->tickCritical.Width(1); v->tickCritical.HorizontalAlignment(HorizontalAlignment::Left); v->tickCritical.Margin({176.4,1,0,1});
+    statusRow.Children().Append(v->statusWell); statusRow.Children().Append(v->tooltipStatus);
+    v->tooltipConnection=TextBlock(); v->tooltipConnection.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipConnection.FontSize(11.0); v->tooltipConnection.Opacity(0.75); v->tooltipConnection.VerticalAlignment(VerticalAlignment::Center);
+    StackPanel statusLine; statusLine.Orientation(Orientation::Horizontal); // ④ state left / transport right, one rail
+    statusLine.Children().Append(statusRow);
+    v->statusLine=statusLine; v->statusRailText=v->tooltipConnection;
+    // Signature scale: ticks at the REAL 20%/10% thresholds, taller than the
+    // slot so lighting up reads as a gauge notch (F2); container must be 14 high.
+    v->tooltipTrack=Grid(); v->tooltipTrack.Height(14); v->tooltipTrack.Margin({0,10,0,10});
+    v->trackBackground=Border(); v->trackBackground.Height(6); v->trackBackground.CornerRadius({3,3,3,3}); v->trackBackground.VerticalAlignment(VerticalAlignment::Center);
+    v->tooltipFill=Border(); v->tooltipFill.Height(6); v->tooltipFill.HorizontalAlignment(HorizontalAlignment::Left); v->tooltipFill.CornerRadius({3,3,3,3}); v->tooltipFill.VerticalAlignment(VerticalAlignment::Center);
+    v->tickHigh=Windows::UI::Xaml::Shapes::Rectangle(); v->tickHigh.Width(1.5); v->tickHigh.Height(12); v->tickHigh.VerticalAlignment(VerticalAlignment::Center); v->tickHigh.HorizontalAlignment(HorizontalAlignment::Left); v->tickHigh.Margin({57.75,0,0,0});
+    v->tickCritical=Windows::UI::Xaml::Shapes::Rectangle(); v->tickCritical.Width(1.5); v->tickCritical.Height(12); v->tickCritical.VerticalAlignment(VerticalAlignment::Center); v->tickCritical.HorizontalAlignment(HorizontalAlignment::Left); v->tickCritical.Margin({37.75,0,0,0});
     v->tooltipTrack.Children().Append(v->trackBackground); v->tooltipTrack.Children().Append(v->tooltipFill);
     v->tooltipTrack.Children().Append(v->tickHigh); v->tooltipTrack.Children().Append(v->tickCritical);
-    v->tooltipConnection=TextBlock(); v->tooltipConnection.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipConnection.FontSize(11.0); v->tooltipConnection.Opacity(0.70);
     // Companion mouse summary fed by tooltip line 1; hidden for single-mouse setups.
-    v->tooltipOther=TextBlock(); v->tooltipOther.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipOther.FontSize(11.0); v->tooltipOther.Opacity(0.70); v->tooltipOther.Margin({0,4,0,0}); v->tooltipOther.Visibility(Visibility::Collapsed);
-    // Device-personality row: a small chip naming the line (电竞/办公), so two
-    // mice of very different characters never read as the same template.
-    v->kindGlyph=Windows::UI::Xaml::Shapes::Rectangle(); v->kindGlyph.Width(6); v->kindGlyph.Height(6); v->kindGlyph.RadiusX(3); v->kindGlyph.RadiusY(3); v->kindGlyph.VerticalAlignment(VerticalAlignment::Center); v->kindGlyph.Margin({0,0,5,0});
-    v->tooltipKind=StackKindText();
-    StackPanel kindRow; kindRow.Orientation(Orientation::Horizontal); kindRow.Margin({0,8,0,0});
-    kindRow.Children().Append(v->kindGlyph); kindRow.Children().Append(v->tooltipKind);
-    v->kindRow=kindRow; v->kindRow.Visibility(Visibility::Collapsed);
-    card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(statusRow); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipConnection); card.Children().Append(v->tooltipOther); card.Children().Append(v->kindRow);
-    v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({8,8,8,8}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->pill,v->tooltip); // pill only: hovering the empty slot corners must not open the card
+    v->tooltipOther=TextBlock(); v->tooltipOther.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipOther.FontSize(11.5); v->tooltipOther.Opacity(0.88); v->tooltipOther.Margin({0,8,0,0}); v->tooltipOther.Visibility(Visibility::Collapsed);
+    card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(v->tooltipTrack); card.Children().Append(statusLine); card.Children().Append(v->tooltipOther);
+    v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({12,12,12,12}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->pill,v->tooltip); // pill only: hovering the empty slot corners must not open the card
     v->menu=MenuFlyout();
     auto iconFor=[](wchar_t const* glyph){ FontIcon i; i.FontFamily(FontFamily(L"Segoe MDL2 Assets")); i.Glyph(glyph); return i; };
     v->settings=MenuFlyoutItem(); v->settings.Text(L"设置"); v->settings.Icon(iconFor(L"\uE713"));
@@ -303,22 +308,23 @@ void Update(Work& work) {
     if(s.position==3) v.column.Width({ExternalLeftWidth()+56,GridUnitType::Pixel});
     v.text.Text(std::to_wstring(s.percent));
     bool light=v.host.ActualTheme()==ElementTheme::Light;
-    Color color=CatText(light);
-    Color fillTop=light ? Color{46,66,107,148} : Color{50,159,189,222};
-    Color fillBottom=light ? Color{14,66,107,148} : Color{16,159,189,222};
-    Color stroke=light ? Color{45,66,107,148} : Color{55,159,189,222};
-    if(s.percent<=20) {
-        color=CatYellow(light);
-        fillTop=light ? Color{30,230,140,0} : Color{34,248,198,70};
-        fillBottom=light ? Color{8,230,140,0} : Color{10,248,198,70};
-        stroke=light ? Color{60,200,120,0} : Color{65,248,198,70};
-    }
-    if(s.percent<=10) {
-        color=CatRed(light);
-        fillTop=light ? Color{32,196,43,28} : Color{38,255,125,125};
-        fillBottom=light ? Color{10,196,43,28} : Color{12,255,125,125};
-        stroke=light ? Color{60,196,43,28} : Color{65,255,125,125};
-    }
+    bool gaming=s.reserved!=0; // personality rides the reserved field (ABI-compatible)
+    Color identity=CatIdentity(gaming,light);
+    // Design doc §4.2: hover glass in identity color, threshold overrides.
+    // Dark: gaming top α88/bottom α26/stroke α140; office α66/20/90.
+    // Light: gaming α60/18/120; office α46/14/80. Threshold multiplies α×0.88.
+    double mul=1.0; // threshold decay
+    bool warnYellow=s.percent>10&&s.percent<=20, warnRed=s.percent<=10;
+    if(warnYellow||warnRed) mul=0.88;
+    if(s.state==2) mul*=0.72; // stale reading decays everything
+    Color pillColor=warnRed ? CatRed(light) : warnYellow ? CatYellow(light) : identity;
+    int topA=light ? (int)((gaming?60:46)*mul) : (int)((gaming?88:66)*mul);
+    int botA=light ? (int)((gaming?18:14)*mul) : (int)((gaming?26:20)*mul);
+    int strA=light ? (int)((gaming?120:80)*mul) : (int)((gaming?140:90)*mul);
+    Color color=warnRed ? CatRed(light) : warnYellow ? CatYellow(light) : CatText(light);
+    Color fillTop=WithAlphaA(pillColor,topA);
+    Color fillBottom=WithAlphaA(pillColor,botA);
+    Color stroke=WithAlphaA(pillColor,strA);
     v.text.Foreground(SolidColorBrush(color)); v.suffix.Foreground(SolidColorBrush(color));
     // Layered glass pill: dense at the top edge, fading toward the bottom.
     v.baseTop=fillTop; v.baseBottom=fillBottom; v.baseStroke=stroke;
@@ -330,46 +336,76 @@ void Update(Work& work) {
         v.tooltipOther.Visibility(Visibility::Visible);
         v.tooltipOther.Text(detail.substr(nl+1));
     } else v.tooltipOther.Visibility(Visibility::Collapsed);
-    bool gaming=s.reserved!=0; // personality rides the reserved field, not tooltip text
 
-    v.tooltipValue.Text(std::to_wstring(s.percent)+L"%");
+    v.tooltipValue.Text(std::to_wstring(s.percent)); // numeral only: the % lives in valueUnit (F1)
     v.tooltipValue.Foreground(SolidColorBrush(color));
-    std::wstring charge;
-    if(!gaming) charge=L"AA 电池供电";
-    else switch(s.charging) {case 0:charge=L"未充电";break;case 1:charge=L"正在充电";break;case 2:charge=L"慢速充电";break;case 3:charge=L"已充满";break;case 4:charge=L"充电异常";break;default:charge=L"未知充电状态 ("+std::to_wstring(s.charging)+L")";}
-    v.tooltipStatus.Text(s.state==2 ? L"正在重连 · 上次读数" : charge);
-    v.tooltipConnection.Text(s.state==2 ? L"等待设备恢复连接" : s.transport==1 ? L"已连接 · USB 有线" : L"已连接 · 2.4G 无线");
     Color muted=CatSubtext(light);
     Color accent=CatAccent(light);
-    // Personality chip: tooltip's last line tags 电竞/办公 internally. The chip
-    // shows the product line instead of the category word, and only the color
-    // dot plus the gaming accent edge distinguish the two cards.
-    
-    v.kindRow.Visibility(Visibility::Visible);
-    v.tooltipKind.Text(gaming ? L"PRO X 系列" : L"Signature 系列");
-    v.kindGlyph.Fill(SolidColorBrush(gaming ? accent : muted));
-    // Threshold ticks carry meaning: amber once the fill crosses 20%, red at
-    // 10%; neutral while the reading is healthy.
-    // Ticks stay softer than the fill so "lighting up" reads as a layer, not a swap.
-    Color neutralTick=light ? Color{110,108,111,133} : Color{110,166,173,200};
-    Color highTick=s.percent<=20 ? (light ? Color{200,223,142,29} : Color{200,249,226,175}) : neutralTick;
-    Color critTick=s.percent<=10 ? (light ? Color{200,210,15,57} : Color{200,243,139,168}) : highTick;
+    v.statusRailText.TextAlignment(TextAlignment::Right);
+    // Threshold ticks: real 20%/10% positions; neutral = Subtext α110, crossed
+    // = full Yellow/Red (design doc §2.2).
+    Color neutralTick=WithAlphaA(muted,110);
+    Color highTick=warnYellow ? CatYellow(light) : neutralTick;
+    Color critTick=warnRed ? CatRed(light) : (warnYellow ? CatYellow(light) : neutralTick);
     v.tickHigh.Fill(SolidColorBrush(highTick)); v.tickCritical.Fill(SolidColorBrush(critTick));
-    bool charging=s.charging==1||s.charging==2;
-    v.statusGlyph.Visibility(charging ? Visibility::Visible : Visibility::Collapsed);
-    if(charging) v.statusGlyph.Foreground(SolidColorBrush(accent));
+    // State matrix (design doc §2.3).
+    std::wstring charge;
+    if(s.state==2) charge=L"正在重连 · 上次读数";
+    else if(!gaming) charge=L"AA 电池供电";
+    else switch(s.charging) {case 0:charge=L"未充电";break;case 1:charge=L"正在充电";break;case 2:charge=L"慢速充电";break;case 3:charge=L"已充满";break;case 4:charge=L"充电异常";break;default:charge=L"未知充电状态 ("+std::to_wstring(s.charging)+L")";}
+    bool showWell=false;
+    Color wellFill=identity, wellStroke=identity, boltColor=identity;
+    if(s.state==2) { v.tooltipStatus.Foreground(SolidColorBrush(CatYellow(light))); }
+    else if(!gaming || s.charging==0 || s.charging==3) {
+        v.tooltipStatus.Foreground(SolidColorBrush(WithAlphaA(CatText(light),s.charging==3?235:220)));
+        if(s.charging==3 && gaming) { /* full: no bolt */ }
+        else if(!gaming) { v.tooltipStatus.Foreground(SolidColorBrush(WithAlphaA(CatSubtext(light),220))); }
+    } else if(s.charging==4) {
+        charge=L"充电异常"; v.tooltipStatus.Foreground(SolidColorBrush(CatRed(light)));
+        wellFill=WithAlphaA(CatRed(light),34); wellStroke=WithAlphaA(CatRed(light),110); boltColor=CatRed(light); showWell=true;
+    } else { // charging 1/2
+        v.tooltipStatus.Foreground(SolidColorBrush(WithAlphaA(CatText(light),235)));
+        wellFill=WithAlphaA(identity,34); wellStroke=WithAlphaA(identity,90); boltColor=identity; showWell=true;
+    }
+    v.statusWell.Visibility(showWell ? Visibility::Visible : Visibility::Collapsed);
+    v.statusWell.Background(SolidColorBrush(wellFill)); v.statusWell.BorderBrush(SolidColorBrush(wellStroke)); v.statusWell.BorderThickness({1,1,1,1});
+    v.statusGlyph.Foreground(SolidColorBrush(boltColor));
+    v.tooltipStatus.Text(charge);
+    v.tooltipConnection.Text(s.state==2 ? L"等待设备恢复连接" : s.transport==1 ? L"USB 有线" : s.transport==3 ? L"蓝牙" : s.transport==0 ? L"" : L"2.4G 无线"); // F4 + missing transport hides
+    v.tooltipConnection.Visibility(s.transport==0 ? Visibility::Collapsed : Visibility::Visible);
     v.tooltip.RequestedTheme(light ? ElementTheme::Light : ElementTheme::Dark);
-    v.tooltip.Background(SolidColorBrush(CatSurface(light)));
-    // The gaming card carries an accent edge; the office card stays muted.
-    v.tooltip.BorderBrush(SolidColorBrush(gaming ? accent : CatBorder(light)));
-    v.tooltipName.Foreground(SolidColorBrush(muted));
-    v.valueUnit.Foreground(SolidColorBrush(muted));
-    v.tooltipStatus.Foreground(SolidColorBrush(s.state==2 ? CatYellow(light) : muted));
-    v.tooltipConnection.Foreground(SolidColorBrush(muted));
-    v.tooltipOther.Foreground(SolidColorBrush(muted));
-    v.trackBackground.Background(SolidColorBrush(light ? Color{255,229,237,246} : Color{255,49,64,82}));
-    v.tooltipFill.Background(SolidColorBrush(s.percent<=20 ? color : accent));
-    v.tooltipFill.Width(196.0*s.percent/100.0);
+    // Card materials (design doc §2.4): Edge-lit gaming / Frosted office /
+    // Warning override. Dark gets a Surface→Scrim gradient; light stays flat.
+    if(light) v.tooltip.Background(SolidColorBrush(CatSurface(light)));
+    else {
+        LinearGradientBrush cardBrush;
+        cardBrush.StartPoint({0,0}); cardBrush.EndPoint({0,1});
+        GradientStop cs; cs.Color(CatSurface(light)); cs.Offset(0.0);
+        GradientStop ce; ce.Color(CatScrim(light)); ce.Offset(1.0);
+        cardBrush.GradientStops().Append(cs); cardBrush.GradientStops().Append(ce);
+        v.tooltip.Background(cardBrush);
+    }
+    // Card edge: identity (Mauve gaming full α255 dark / Sapphire office α90);
+    // warning forces α200 Yellow/Red. Dark-only per design doc §2.4 light rule.
+    int edgeA=gaming ? (light?210:255) : (light?0:90);
+    if(warnYellow||warnRed) { edgeA=200; }
+    if(light && !gaming) edgeA=0; // frosted office: no visible edge in light
+    if(light && gaming) v.tooltip.BorderBrush(SolidColorBrush(WithAlphaA(CatMauve(true),edgeA)));
+    else if(warnYellow) v.tooltip.BorderBrush(SolidColorBrush(WithAlphaA(CatYellow(light),edgeA)));
+    else if(warnRed) v.tooltip.BorderBrush(SolidColorBrush(WithAlphaA(CatRed(light),edgeA)));
+    else if(gaming) v.tooltip.BorderBrush(SolidColorBrush(WithAlphaA(CatMauve(light),edgeA)));
+    else v.tooltip.BorderBrush(SolidColorBrush(WithAlphaA(CatSapphire(light),edgeA==0?0:90)));
+    bool edgeVisible=gaming||warnYellow||warnRed||!light;
+    v.tooltip.BorderThickness(edgeVisible ? Thickness(1) : Thickness(0));
+    v.tooltipName.Foreground(SolidColorBrush(WithAlphaA(CatText(light),235)));
+    v.valueUnit.Foreground(SolidColorBrush(WithAlphaA(muted,205)));
+    v.tooltipConnection.Foreground(SolidColorBrush(WithAlphaA(muted,190)));
+    v.tooltipOther.Foreground(SolidColorBrush(WithAlphaA(muted,225)));
+    bool staleRow=detail.find(L"旧读数")!=std::wstring::npos;
+    v.tooltipOther.Foreground(SolidColorBrush(staleRow ? WithAlphaA(CatYellow(light),210) : WithAlphaA(muted,225)));
+    v.trackBackground.Background(SolidColorBrush(CatBorder(light)));
+    v.tooltipFill.Background(SolidColorBrush(s.percent<=20 ? color : identity));
+    v.tooltipFill.Width(200.0*s.percent/100.0);
     Automation::AutomationProperties::SetName(v.host,hstring(s.tooltip));
     v.toggle.Text(s.startup ? L"关闭开机启动" : L"开启开机启动");
     v.host.UpdateLayout();
