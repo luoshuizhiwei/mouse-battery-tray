@@ -15,7 +15,7 @@ internal sealed class TaskbarPublisher : IDisposable {
     [DllImport("kernel32.dll")] static extern ulong GetTickCount64();
     internal TaskbarPublisher(string mapName=MapName) { mapping=MemoryMappedFile.CreateOrOpen(mapName,Capacity,MemoryMappedFileAccess.ReadWrite); view=mapping.CreateViewAccessor(0,Capacity); }
     internal void MarkSuccess() { lastSuccessTick=GetTickCount64(); }
-    internal void Publish(DisplayState state,long now,int position,bool startup) {
+    internal void Publish(DisplayState state,long now,int position,bool startup,int themeOverride=0) {
         byte[] payload=new byte[Capacity];
         bool visible=state.Visible(now);
         var shown=state.Displayed(now);
@@ -35,7 +35,9 @@ internal sealed class TaskbarPublisher : IDisposable {
         // reads it for the product-line chip instead of parsing tooltip lines.
         Buffer.BlockCopy(BitConverter.GetBytes(shown!=null && shown.Gaming ? 1 : 0),0,payload,44,4);
         byte[] text=Encoding.Unicode.GetBytes(state.Tooltip(now));
-        Buffer.BlockCopy(text,0,payload,48,Math.Min(text.Length,Capacity-50));
+        Buffer.BlockCopy(text,0,payload,48,Math.Min(text.Length,480-48-2));
+        // Probe-only theme override at 480; 0 keeps the host theme.
+        Buffer.BlockCopy(BitConverter.GetBytes(themeOverride<0||themeOverride>2?0:themeOverride),0,payload,480,4);
         view.Write(4,++sequence); Thread.MemoryBarrier();
         view.WriteArray(0,payload,0,4); view.WriteArray(8,payload,8,Capacity-8);
         Thread.MemoryBarrier(); view.Write(4,++sequence);

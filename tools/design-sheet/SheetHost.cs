@@ -48,6 +48,7 @@ class SheetHost {
                 string name = c[6];
                 int companion = ParseInt(c[7]);
                 int compStale = ParseInt(c[8]);
+                int themeOverride = c.Length > 9 ? ParseInt(c[9]) : 0;
 
                 var state = new DisplayState();
                 var primary = Reading(name, "unit-primary", "hid#sheet-primary", percent, charging, gaming == 1, transport);
@@ -60,7 +61,7 @@ class SheetHost {
                 }
                 if(stale == 2) state.MarkFailed(new[]{ primary.Path }, Now);
                 publisher.MarkSuccess();
-                publisher.Publish(state, Now, 0, false);
+                publisher.Publish(state, Now, 0, false, themeOverride);
 
                 string status = "";
                 bool matched = false;

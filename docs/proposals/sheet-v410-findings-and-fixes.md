@@ -179,3 +179,36 @@ powershell -File tools\design-sheet\capture-settings-sheet.ps1
 - **N5/N6/N7 已在本文件记录的第二轮修复中完成**（见上）。
 - Q3/Q4 人判、Latte 12 格、降级横幅实截未完成。
 - 晋升到 `E:\MouseBattery\app\` 需你批准；晋升前需先 `--exit` 正式版并按既有流程核对双哈希。
+
+---
+
+## themeOverride 实施记录（2026-11-02 第三轮，A 方案）
+
+### 字段（`static_assert(sizeof(Snapshot)==512)` 保持不变）
+
+```
+tooltip[216] @48..479     原 232；尾部让出 32B
+themeOverride @480        0=跟随宿主主题，1=强制 Latte，2=强制 Mocha
+lastActiveTick @484       保留给"每设备新鲜度"（0=未知）
+lastSuccessTickAny @488   保留（0=未知）
+pad[5] @492..511
+```
+
+- `Read()`：`tooltip[215]=0`；`themeOverride` 越界一律归零。
+- `Update()`：`light = override==1 ? true : override==2 ? false : ActualTheme==Light`；`Signature()` 已含 light，主题变化会触发一次样式刷新。
+- `TaskbarPublisher.Publish(..., int themeOverride=0)`：tooltip 写入上限改为 `480-48-2=430` 字节；480 处写入 override。生产调用不传该参数，恒为 0。
+- 混合版本：旧 EXE + 新 DLL —— 超长 tooltip（>216 字符）会落到 480，但被 0..2 校验挡下；新 EXE + 旧 DLL —— 旧读法强制 NUL，尾部被忽略。两侧均安全。
+
+### 验证
+
+- `test.ps1` 48 逻辑 + 15 IPC；`AppearanceProbe` 8/8。
+- Latte 强制帧 12 格（`run-20261102-185439`，DLL `6A06D0FA…`）：`text=210,15,57`（RedLight）/`tickHigh=223,142,29`（YellowLight）证实 token 切换生效；玻璃 11/12 点亮，卡 8/12。
+- **限制**：强制主题只改我方绘制色，任务栏真实底仍是深色。实测健康态文字对比度仅 **1.9**（Mocha 为 5.6）——这恰好证明"Latte 绘制 × 深色底"不能用来看可见性。**真浅色任务栏仍需一次真实浅色会话**，此项不是代码缺口。
+
+### 产物（候选，未晋升、未提交）
+
+- 原生 DLL：`6A06D0FA1F7D09BCCCF01AAA190AFF9DA7792865C133A545EA99880A6898BD8E`
+- 候选 EXE：`E589774FEF79CF547EC5F47286A628924D95F87BF3FB035449CD22CA7AD3AE2F`
+- 探针：`4D530F5AD8E12EA7B1A9A4D24D6511BF4C0CA8ADDDDC3171572BCD65E530C009`
+- SheetHost：`0ADD2F469CA8E4EE5CD79107FC5FC98C6FA28A229FBA7F82F37EF2410BAC601D`
+- 正式版仍是 v4.1.0（EXE `3B045AA2…`），未被替换。

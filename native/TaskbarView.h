@@ -32,7 +32,11 @@ struct Snapshot {
     uint32_t magic, sequence;
     uint64_t tick;
     int32_t state, percent, charging, transport, pid, position, startup, reserved;
-    wchar_t tooltip[232];
+    wchar_t tooltip[216];                 // 48..479 (was 232; tail now carries probe fields)
+    int32_t themeOverride;                // 480: 0 host theme, 1 force Light, 2 force Dark
+    int32_t lastActiveTick;               // 484: reserved for the freshness badge (0 = unknown)
+    int32_t lastSuccessTickAny;           // 488: reserved (0 = unknown)
+    int32_t pad[5];                       // 492..511, keeps sizeof at 512
 };
 static_assert(sizeof(Snapshot)==512);
 HANDLE g_stop=nullptr, g_mapping=nullptr;
@@ -323,7 +327,9 @@ void Update(Work& work) {
     auto& v=*g_view;
     if(s.position==3) v.column.Width({ExternalLeftWidth()+56,GridUnitType::Pixel});
     v.text.Text(std::to_wstring(s.percent));
-    bool light=v.host.ActualTheme()==ElementTheme::Light;
+    bool actualLight=v.host.ActualTheme()==ElementTheme::Light;
+    // Probe-only override; production always publishes 0 so the host theme wins.
+    bool light=s.themeOverride==1 ? true : s.themeOverride==2 ? false : actualLight;
     bool gaming=s.reserved!=0; // personality rides the reserved field (ABI-compatible)
     Color identity=CatIdentity(gaming,light);
     // Design doc §4.2: hover glass in identity color, threshold overrides.
@@ -477,7 +483,8 @@ Snapshot Read() {
     MemoryBarrier(); std::memcpy(&result,g_data,sizeof(result)); MemoryBarrier();
     uint32_t after=((Snapshot volatile const*)g_data)->sequence;
     if(before!=after || result.magic!=0x3254424D || result.percent<0 || result.percent>100 || result.state<0 || result.state>2 || result.position<0 || result.position>3 || GetTickCount64()-result.tick>=15000) result.state=0;
-    result.tooltip[231]=0;
+    result.tooltip[215]=0;
+    if(result.themeOverride<0 || result.themeOverride>2) result.themeOverride=0;
     return result;
 }
 }

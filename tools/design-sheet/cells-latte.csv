@@ -1,0 +1,14 @@
+# Latte half: same 12 main cells, forced Light via the snapshot themeOverride (col 10 = 1).
+# ids stay T-01..T-12 so the sheets diff cell-by-cell against the Mocha run.
+T-01,100,0,1,1,2,PRO X 2 DEX,1,0,1
+T-02,85,0,1,1,2,PRO X 2 DEX,1,0,1
+T-03,21,0,1,1,2,PRO X 2 DEX,1,0,1
+T-04,20,0,1,1,2,PRO X 2 DEX,1,0,1
+T-05,10,0,1,1,2,PRO X 2 DEX,1,0,1
+T-06,0,0,1,1,2,PRO X 2 DEX,1,0,1
+T-07,100,0,1,0,3,Signature Plus M750 L,1,0,1
+T-08,85,0,1,0,3,Signature Plus M750 L,1,0,1
+T-09,21,0,1,0,3,Signature Plus M750 L,1,0,1
+T-10,20,0,1,0,3,Signature Plus M750 L,1,0,1
+T-11,10,0,1,0,3,Signature Plus M750 L,1,0,1
+T-12,0,0,1,0,3,Signature Plus M750 L,1,0,1
