@@ -66,6 +66,11 @@ struct View {
     Color baseTop{},baseBottom{},baseStroke{};
     bool hover=false;
     int position=-1;
+    // N3: Update() is dispatched every 500ms. Re-assigning a fresh
+    // SolidColorBrush to an open ToolTip dismisses it mid-show, so the style
+    // block only runs when an input actually changed.
+    uint64_t styleSig=0;
+    bool styled=false;
 };
 
 // Catppuccin theme tokens - matches Ui.cs static class
@@ -296,6 +301,17 @@ bool Insert(FrameworkElement const& root,int position) {
     g_view=std::move(v); return true;
 }
 
+// N3: hash of every input the style block depends on. An unchanged hash means
+// the 500ms dispatch has nothing to repaint, so an open ToolTip stays open.
+uint64_t Signature(Snapshot const& s,bool light) {
+    uint64_t h=1469598103934665603ULL;
+    for(wchar_t const* p=s.tooltip;*p;++p) { h^=(uint64_t)(uint16_t)*p; h*=1099511628211ULL; }
+    uint64_t v=(uint64_t)(light?1:0)|((uint64_t)(s.reserved?1:0)<<1)|((uint64_t)(s.state&3)<<2)
+        |((uint64_t)(s.percent&127)<<4)|((uint64_t)(s.charging&7)<<11)|((uint64_t)(s.transport&7)<<14)
+        |((uint64_t)(s.startup?1:0)<<17)|((uint64_t)(s.position&3)<<18);
+    return v^(h<<20);
+}
+
 struct Work { Snapshot snapshot{}; bool remove=false, ran=false; std::wstring health; };
 void Update(Work& work) {
     if(work.remove || work.snapshot.state==0) {Remove();work.health=L"hidden";return;}
@@ -325,6 +341,9 @@ void Update(Work& work) {
     Color fillTop=WithAlphaA(pillColor,topA);
     Color fillBottom=WithAlphaA(pillColor,botA);
     Color stroke=WithAlphaA(pillColor,strA);
+    uint64_t sig=Signature(s,light);
+    bool restyle=!v.styled||sig!=v.styleSig;
+    if(restyle) { // N3: nothing changed => touch no ToolTip property, keep it open
     v.text.Foreground(SolidColorBrush(color)); v.suffix.Foreground(SolidColorBrush(color));
     // Layered glass pill: dense at the top edge, fading toward the bottom.
     v.baseTop=fillTop; v.baseBottom=fillBottom; v.baseStroke=stroke;
@@ -345,8 +364,11 @@ void Update(Work& work) {
     // Threshold ticks: real 20%/10% positions; neutral = Subtext α110, crossed
     // = full Yellow/Red (design doc §2.2).
     Color neutralTick=WithAlphaA(muted,110);
-    Color highTick=warnYellow ? CatYellow(light) : neutralTick;
-    Color critTick=warnRed ? CatRed(light) : (warnYellow ? CatYellow(light) : neutralTick);
+    // N2: each notch is judged independently: the 20% mark stays lit at any
+    // reading at or below 20 (including <=10), the 10% mark only at or below 10.
+    Color highTick=s.percent<=20 ? CatYellow(light) : neutralTick;
+    // N2: the 10% mark never inherits the 20% amber; it is neutral above 10%.
+    Color critTick=warnRed ? CatRed(light) : neutralTick;
     v.tickHigh.Fill(SolidColorBrush(highTick)); v.tickCritical.Fill(SolidColorBrush(critTick));
     // State matrix (design doc §2.3).
     std::wstring charge;
@@ -409,6 +431,8 @@ void Update(Work& work) {
     Automation::AutomationProperties::SetName(v.host,hstring(s.tooltip));
     v.toggle.Text(s.startup ? L"关闭开机启动" : L"开启开机启动");
     v.host.UpdateLayout();
+    v.styled=true; v.styleSig=sig;
+    } // restyle
     auto point=v.host.TransformToVisual(root.Content().as<UIElement>()).TransformPoint({0,0});
     work.health=L"visible position="+std::to_wstring(s.position)+L" percent="+std::to_wstring(s.percent)+L" x="+std::to_wstring(point.X)+L" y="+std::to_wstring(point.Y)+L" width="+std::to_wstring(v.host.ActualWidth())+L" height="+std::to_wstring(v.host.ActualHeight())+L" parent="+std::wstring(get_class_name(v.parent));
     work.health+=L" style=catppuccin pillWidth="+std::to_wstring(v.pill.ActualWidth())+L" pillHeight="+std::to_wstring(v.pill.ActualHeight())+L" numberWidth="+std::to_wstring(v.text.ActualWidth())+L" suffixWidth="+std::to_wstring(v.suffix.ActualWidth());

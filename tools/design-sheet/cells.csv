@@ -1,0 +1,22 @@
+# id,percent,charging,state(1 fresh|2 stale),gaming(1 PRO X|0 Signature),transport(1 wired|2 2.4G|3 ble),name,companion(0|1),companionStale(0|1)
+# Names are the real device strings: the card name row must be judged on the
+# glyph run it actually renders, not on a Chinese placeholder.
+T-01,100,0,1,1,2,PRO X 2 DEX,1,0
+T-02,85,0,1,1,2,PRO X 2 DEX,1,0
+T-03,21,0,1,1,2,PRO X 2 DEX,1,0
+T-04,20,0,1,1,2,PRO X 2 DEX,1,0
+T-05,10,0,1,1,2,PRO X 2 DEX,1,0
+T-06,0,0,1,1,2,PRO X 2 DEX,1,0
+T-07,100,0,1,0,3,Signature Plus M750 L,1,0
+T-08,85,0,1,0,3,Signature Plus M750 L,1,0
+T-09,21,0,1,0,3,Signature Plus M750 L,1,0
+T-10,20,0,1,0,3,Signature Plus M750 L,1,0
+T-11,10,0,1,0,3,Signature Plus M750 L,1,0
+T-12,0,0,1,0,3,Signature Plus M750 L,1,0
+T-13,85,1,1,1,2,PRO X 2 DEX,1,0
+T-14,100,3,1,1,2,PRO X 2 DEX,1,0
+T-15,45,4,1,1,2,PRO X 2 DEX,1,0
+T-16,85,0,2,1,2,PRO X 2 DEX,1,0
+T-17,85,0,1,1,2,PRO X 2 DEX,0,0
+T-18,85,0,1,0,3,Signature Plus M750 L,1,1
+T-19,11,0,1,0,3,Signature Plus M750 L,1,0

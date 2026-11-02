@@ -38,8 +38,8 @@ class AppearanceProbe {
                 // 10% tick goes red; both stay neutral above the thresholds.
                 string hiTick=value<=20 ? "223,142,29" : "108,111,133";
                 string hiTickD=value<=20 ? "249,226,175" : "166,173,200";
-                string critTick=value<=10 ? "210,15,57" : (value<=20 ? "223,142,29" : "108,111,133");
-                string critTickD=value<=10 ? "243,139,168" : (value<=20 ? "249,226,175" : "166,173,200");
+                string critTick=value<=10 ? "210,15,57" : "108,111,133";
+                string critTickD=value<=10 ? "243,139,168" : "166,173,200";
                 if(!status.Contains("tickHigh="+hiTick) && !status.Contains("tickHigh="+hiTickD)) throw new Exception("Wrong 20% tick state: "+status);
                 if(!status.Contains("tickCritical="+critTick) && !status.Contains("tickCritical="+critTickD)) throw new Exception("Wrong 10% tick state: "+status);
                 Console.WriteLine("PASS simulated "+value+"% stale="+stale+" contentWidth="+content.ToString("F3",CultureInfo.InvariantCulture)+" | "+status);

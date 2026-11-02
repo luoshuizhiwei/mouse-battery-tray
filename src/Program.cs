@@ -75,9 +75,9 @@ internal static class Program {
 internal sealed class PositionPicker : Control {
     internal static readonly string[] PositionNames={"系统托盘与时钟区域左侧","紧邻时钟左侧","时钟右侧","任务栏最左侧"};
     static readonly int[] VisualOrder={3,0,1,2};
+    const float BarWidth=432f,BarHeight=40f;
     int position,hover=-1,percent=-1;
-    bool light=true;
-    Color barFill,lineColor,blockColor,pillFill,pillText,anchorColor,hoverFill,captionColor;
+    bool light=true,gaming=false,pressed=false;
     internal event Action PositionChanged;
     public PositionPicker() {
         SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint|ControlStyles.ResizeRedraw|ControlStyles.SupportsTransparentBackColor,true);
@@ -97,63 +97,63 @@ internal sealed class PositionPicker : Control {
     }
     internal int Position { get { return position; } set { position=Math.Max(0,Math.Min(3,value)); Invalidate(); } }
     internal int Percent { set { percent=value; Invalidate(); } }
-    internal void SetTheme(bool lightTheme,Color foreground,Color muted,Color accent,Color track) {
-        light=lightTheme; barFill=track; captionColor=muted; pillText=foreground;
-        lineColor=Ui.GetColor(light, Ui.BaseLight, Ui.BaseDark);
-        blockColor=Ui.GetSurfaceColor(light);
-        pillFill=light ? Color.FromArgb(46,66,107,148) : Color.FromArgb(58,159,189,222);
-        anchorColor=light ? Color.FromArgb(160,113,128,148) : Color.FromArgb(160,159,177,198);
-        hoverFill=light ? Color.FromArgb(28,66,107,148) : Color.FromArgb(40,159,189,222);
-        Invalidate();
+    internal bool Gaming { set { gaming=value; Invalidate(); } }
+    internal void SetTheme(bool lightTheme) { light=lightTheme; Invalidate(); }
+    // Zones follow the real taskbar order: right-most is the clock's right side.
+    // Artwork sits in the gaps so a drawn element never covers a click target.
+    RectangleF[] Zones() {
+        return new RectangleF[]{
+            new RectangleF(188,0,52,BarHeight),
+            new RectangleF(292,0,52,BarHeight),
+            new RectangleF(392,0,40,BarHeight),
+            new RectangleF(0,0,52,BarHeight)
+        };
     }
-    // Zones are indexed by position value; artwork is drawn in the gaps so a
-    // drawn element never sits under a clickable slot.
-    Rectangle[] Zones() {
-        float w=Width,h=Height*0.55f;
-        var zones=new Rectangle[4]; float m=Math.Max(4,w*0.02f);
-        zones[3]=new Rectangle((int)m,0,(int)(w*0.085f),(int)h);
-        float appL=m+w*0.11f,appW=w*0.26f;
-        zones[0]=new Rectangle((int)(appL+appW+w*0.015f),0,(int)(w*0.10f),(int)h);
-        float trayL=zones[0].Right+w*0.015f,trayW=w*0.10f;
-        zones[1]=new Rectangle((int)(trayL+trayW+w*0.015f),0,(int)(w*0.105f),(int)h);
-        float clockL=zones[1].Right+w*0.02f;
-        zones[2]=new Rectangle((int)(clockL+w*0.015f),0,(int)Math.Max(24,w-(clockL+w*0.015f)-m),(int)h);
-        return zones;
-    }
+    static Color Mix(Color background,Color top,int alpha) { return Ui.Overlay(background,255,Ui.WithAlpha(top,alpha)); }
     protected override void OnPaint(PaintEventArgs e) {
         var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        var zones=Zones(); float h=zones[0].Height;
-        var bar=new RectangleF(zones[3].Left-6,0,zones[2].Right-zones[3].Left+12,h);
-        using(var path=RoundPath(bar,7)) {
+        Color baseColor=Ui.Base(light),border=Ui.Border(light),surface=Ui.Surface(light),text=Ui.Text(light),muted=Ui.Subtext(light),accent=Ui.Accent(light);
+        Color identity=Ui.Identity(gaming,light);
+        Color barFill=Mix(baseColor,border,120);
+        var bar=new RectangleF(0,0,BarWidth,BarHeight);
+        using(var path=RoundPath(bar,10)) {
             using(var b=new SolidBrush(barFill)) g.FillPath(b,path);
-            using(var p=new Pen(lineColor)) g.DrawPath(p,path);
+            using(var p=new Pen(Ui.WithAlpha(border,190))) g.DrawPath(p,path);
         }
-        float appL=zones[3].Right+8,appR=zones[0].Left-8,bw=(appR-appL-10)/6f;
-        using(var b=new SolidBrush(blockColor)) for(int i=0;i<6;i++) {
-            using(var path=RoundPath(new RectangleF(appL+i*(bw+2),h*0.30f,bw,h*0.40f),2)) g.FillPath(b,path);
+        using(var b=new SolidBrush(Ui.WithAlpha(surface,180))) {
+            for(int i=0;i<6;i++) using(var path=RoundPath(new RectangleF(60+i*24,12,20,16),3)) g.FillPath(b,path);
+            for(int i=0;i<3;i++) using(var path=RoundPath(new RectangleF(248+i*20,14,12,12),2)) g.FillPath(b,path);
+            using(var path=RoundPath(new RectangleF(352,10,32,20),5)) g.FillPath(b,path);
         }
-        float sq=Math.Max(5,h*0.24f),trayL=zones[0].Right+8;
-        using(var b=new SolidBrush(blockColor)) for(int i=0;i<3;i++) g.FillRectangle(b,trayL+i*(sq+4),h*0.5f-sq/2f,sq,sq);
-        var clock=new RectangleF(zones[1].Right+8,h*0.24f,zones[2].Left-8-(zones[1].Right+8),h*0.52f);
-        using(var path=RoundPath(clock,3)) using(var b=new SolidBrush(blockColor)) g.FillPath(b,path);
+        var zones=Zones();
         for(int i=0;i<4;i++) {
             if(i==position) continue;
-            float cx=zones[i].Left+zones[i].Width/2f,cy=zones[i].Top+zones[i].Height/2f;
-            using(var p=new Pen(anchorColor)) g.DrawEllipse(p,cx-3.5f,cy-3.5f,7,7);
+            var slot=zones[i];
+            var ghost=new RectangleF(slot.X+(slot.Width-20)/2f,10,20,20);
+            bool isHover=hover==i;
+            using(var path=RoundPath(ghost,6)) {
+                if(isHover) using(var b=new SolidBrush(Ui.WithAlpha(identity,pressed?62:34))) g.FillPath(b,path);
+                using(var p=new Pen(isHover?Ui.WithAlpha(identity,210):Ui.WithAlpha(border,165))) g.DrawPath(p,path);
+            }
         }
-        if(hover>=0&&hover!=position) using(var b=new SolidBrush(hoverFill)) using(var path=RoundPath(new RectangleF(zones[hover].X,zones[hover].Y,zones[hover].Width,zones[hover].Height),5)) g.FillPath(b,path);
-        var slot=zones[position]; float pw=Math.Min(36,slot.Width-6),ph=h-12;
-        var pill=new RectangleF(slot.X+(slot.Width-pw)/2f,slot.Y+(slot.Height-ph)/2f,pw,ph);
-        using(var path=RoundPath(pill,5)) {
-            using(var b=new SolidBrush(pillFill)) g.FillPath(b,path);
-            using(var p=new Pen(lineColor)) g.DrawPath(p,path);
+        var sel=zones[position];
+        float pw=Math.Min(52,sel.Width-8),ph=24;
+        var pill=new RectangleF(sel.X+(sel.Width-pw)/2f,(BarHeight-ph)/2f,pw,ph);
+        using(var path=RoundPath(pill,8)) {
+            using(var brush=new System.Drawing.Drawing2D.LinearGradientBrush(
+                new RectangleF(pill.X,pill.Y,pill.Width,Math.Max(1,pill.Height)),
+                Ui.WithAlpha(identity,150),Ui.WithAlpha(identity,66),
+                System.Drawing.Drawing2D.LinearGradientMode.Vertical)) g.FillPath(brush,path);
+            using(var p=new Pen(Ui.WithAlpha(identity,175))) g.DrawPath(p,path);
         }
         string label=percent<0 ? "--" : percent.ToString();
-        using(var font=new Font(Font.FontFamily,7.5f,FontStyle.Bold,GraphicsUnit.Point))
-            TextRenderer.DrawText(g,label,font,Rectangle.Round(pill),pillText,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
-        if(Focused) ControlPaint.DrawFocusRectangle(g,slot);
-        using(var font=new Font(Font.FontFamily,8.25f,FontStyle.Regular,GraphicsUnit.Point))
-            TextRenderer.DrawText(g,"位置："+PositionNames[position],font,new Point((int)bar.X,(int)(h+5)),captionColor);
+        Color numberColor=percent<0 ? muted : percent<=10 ? Ui.Red(light) : percent<=20 ? Ui.Yellow(light) : text;
+        using(var font=new Font(Font.FontFamily,8.25f,FontStyle.Bold,GraphicsUnit.Point))
+            TextRenderer.DrawText(g,label,font,Rectangle.Round(pill),numberColor,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
+        if(Focused) using(var p=new Pen(Ui.WithAlpha(accent,235),1.5f))
+            using(var path=RoundPath(new RectangleF(pill.X-2,pill.Y-2,pill.Width+4,pill.Height+4),10)) g.DrawPath(p,path);
+        using(var font=new Font(Font.FontFamily,7.5f,FontStyle.Regular,GraphicsUnit.Point))
+            TextRenderer.DrawText(g,"点击落点或用 ← → 切换",font,new Point(0,(int)(BarHeight+6)),Ui.WithAlpha(muted,175),TextFormatFlags.NoPrefix);
     }
     int ZoneAt(Point location) { var zones=Zones(); for(int i=0;i<4;i++) if(zones[i].Contains(location)) return i; return -1; }
     void Apply(int value) {
@@ -162,7 +162,9 @@ internal sealed class PositionPicker : Control {
         if(changed && PositionChanged!=null) PositionChanged();
     }
     protected override void OnMouseMove(MouseEventArgs e) { int z=ZoneAt(e.Location); if(z!=hover) { hover=z; Invalidate(); } }
-    protected override void OnMouseLeave(EventArgs e) { if(hover!=-1) { hover=-1; Invalidate(); } }
+    protected override void OnMouseLeave(EventArgs e) { if(hover!=-1) { hover=-1; Invalidate(); } base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e) { if(ZoneAt(e.Location)>=0) { pressed=true; Invalidate(); } base.OnMouseDown(e); }
+    protected override void OnMouseUp(MouseEventArgs e) { if(pressed) { pressed=false; Invalidate(); } base.OnMouseUp(e); }
     protected override void OnMouseClick(MouseEventArgs e) { int z=ZoneAt(e.Location); if(z>=0) Apply(z); base.OnMouseClick(e); }
     protected override bool IsInputKey(Keys keyData) { var k=keyData&Keys.KeyCode; if(k==Keys.Left||k==Keys.Right||k==Keys.Up||k==Keys.Down) return true; return base.IsInputKey(keyData); }
     protected override void OnKeyDown(KeyEventArgs e) {
@@ -173,7 +175,7 @@ internal sealed class PositionPicker : Control {
         e.Handled=true; Apply(VisualOrder[idx]);
     }
     protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
-    protected override void OnLostFocus(EventArgs e) { hover=-1; Invalidate(); base.OnLostFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { hover=-1; pressed=false; Invalidate(); base.OnLostFocus(e); }
 }
 // Shared rounded surface for cards and the degraded banner: soft fill with a
 // 1 px mist-blue stroke, matching the taskbar pill geometry.
@@ -190,26 +192,59 @@ internal sealed class RoundedPanel : Panel {
 }
 // Owner-drawn switch on CheckBox semantics: Checked stays authoritative, so
 // WinForms automation keeps reporting the real ToggleState while the paint
-// becomes a proper toggle instead of the legacy check box.
+// carries the full rest/hover/pressed/disabled/focus state machine.
 internal sealed class ToggleSwitch : CheckBox {
-    readonly Color onColor,offColor,knobColor,textColor;
-    public ToggleSwitch(Color on,Color off,Color knob,Color text) {
-        onColor=on; offColor=off; knobColor=knob; textColor=text;
-        SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint|ControlStyles.ResizeRedraw,true);
+    const int TrackW=40,TrackH=20,KnobSize=14;
+    bool light,hover,pressed;
+    public ToggleSwitch(bool lightTheme) {
+        light=lightTheme;
+        SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint|ControlStyles.ResizeRedraw|ControlStyles.SupportsTransparentBackColor,true);
         Size=new Size(232,26);
     }
+    internal void SetTheme(bool lightTheme) { light=lightTheme; Invalidate(); }
     protected override void OnPaint(PaintEventArgs e) {
         var g=e.Graphics;
-        g.Clear(Parent!=null ? Parent.BackColor : SystemColors.Control);
+        Color parent=Parent!=null?Parent.BackColor:SystemColors.Control;
+        g.Clear(parent);
         g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        float trackY=(Height-18)/2f;
-        using(var path=PositionPicker.RoundPath(new RectangleF(0,trackY,36,18),9)) {
-            using(var b=new SolidBrush(Checked ? onColor : offColor)) g.FillPath(b,path);
+        Color accent=Ui.Accent(light),onKnob=Ui.OnAccent(light),border=Ui.Border(light),text=Ui.Text(light),muted=Ui.Subtext(light);
+        int textW=0;
+        if(!string.IsNullOrEmpty(Text)) {
+            textW=TextRenderer.MeasureText(Text,Font).Width;
+            TextRenderer.DrawText(g,Text,Font,new Rectangle(0,0,textW+2,Height),Enabled?text:Ui.WithAlpha(text,110),TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
         }
-        using(var b=new SolidBrush(knobColor)) g.FillEllipse(b,Checked ? 20 : 2,trackY+2,14,14);
-        if(!string.IsNullOrEmpty(Text)) TextRenderer.DrawText(g,Text,Font,new Point(46,(Height-Font.Height)/2),textColor);
-        if(Focused) ControlPaint.DrawFocusRectangle(g,new Rectangle(0,(int)trackY-2,40,22));
+        int trackX=textW>0?Math.Min(textW+12,Width-TrackW):0;
+        float trackY=(Height-TrackH)/2f;
+        Color fill,stroke,knob;
+        if(!Enabled) {
+            fill=Ui.Overlay(parent,255,Ui.WithAlpha(border,45));
+            stroke=Ui.WithAlpha(border,45);
+            knob=Ui.WithAlpha(muted,45);
+        } else if(Checked) {
+            fill=pressed?Ui.Overlay(Ui.AccentPlus(light),255,Ui.WithAlpha(text,20)):(hover?Ui.AccentPlus(light):accent);
+            stroke=fill; knob=onKnob;
+        } else {
+            fill=Ui.Overlay(parent,255,Ui.WithAlpha(border,pressed?205:150));
+            stroke=hover?Ui.WithAlpha(muted,210):border;
+            knob=hover?text:muted;
+        }
+        var track=new RectangleF(trackX,trackY,TrackW,TrackH);
+        using(var path=PositionPicker.RoundPath(track,10)) {
+            using(var b=new SolidBrush(fill)) g.FillPath(b,path);
+            using(var p=new Pen(stroke)) g.DrawPath(p,path);
+        }
+        int knobSize=pressed?12:KnobSize;
+        float knobX=Checked?trackX+TrackW-3-knobSize:trackX+3;
+        float knobY=trackY+(TrackH-knobSize)/2f;
+        using(var b=new SolidBrush(knob)) g.FillEllipse(b,knobX,knobY,knobSize,knobSize);
+        if(Focused) using(var p=new Pen(Ui.WithAlpha(accent,235),1.5f))
+            using(var path=PositionPicker.RoundPath(new RectangleF(trackX-3,trackY-3,TrackW+6,TrackH+6),13)) g.DrawPath(p,path);
     }
+    protected override void OnMouseEnter(EventArgs e) { hover=true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover=false; pressed=false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e) { pressed=true; Invalidate(); base.OnMouseDown(e); }
+    protected override void OnMouseUp(MouseEventArgs e) { pressed=false; Invalidate(); base.OnMouseUp(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
     protected override void OnCheckedChanged(EventArgs e) { Invalidate(); base.OnCheckedChanged(e); }
     protected override void OnTextChanged(EventArgs e) { Invalidate(); base.OnTextChanged(e); }
 }
@@ -488,7 +523,7 @@ internal sealed class TrayContext : ApplicationContext {
         managerCompanion.Visible=hasCompanion;
         if(hasCompanion) managerCompanion.Text=tip.Substring(nl+1);
         managerTrack.Invalidate();
-        if(positionPicker!=null && !positionPicker.IsDisposed) { positionPicker.Percent=managerLevel; positionPicker.Invalidate(); }
+        if(positionPicker!=null && !positionPicker.IsDisposed) { positionPicker.Gaming=shown!=null&&shown.Gaming; positionPicker.Percent=managerLevel; positionPicker.Invalidate(); }
         if(manager!=null && !manager.IsDisposed) chip.Invalidate(); // product-line chip tracks the displayed device
     }
     private void ShowManager() {
@@ -556,7 +591,7 @@ internal sealed class TrayContext : ApplicationContext {
                 using(var brush=new SolidBrush(fill)) e.Graphics.FillRectangle(brush,0,0,managerTrack.Width*level/100f,managerTrack.Height);
                 Color neutralTick=MouseBattery.Ui.WithAlpha(muted,110);
                 Color highTick=level>=0&&level<=20 ? MouseBattery.Ui.Yellow(light) : neutralTick;
-                Color critTick=level>=0&&level<=10 ? MouseBattery.Ui.Red(light) : highTick;
+                Color critTick=level>=0&&level<=10 ? MouseBattery.Ui.Red(light) : neutralTick;
                 using(var b=new SolidBrush(highTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.2f-NotchHalf,0,MouseBattery.Ui.NotchWidth,managerTrack.Height);
                 using(var b=new SolidBrush(critTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.1f-NotchHalf,0,MouseBattery.Ui.NotchWidth,managerTrack.Height);
             };
@@ -567,21 +602,23 @@ internal sealed class TrayContext : ApplicationContext {
             if(!degraded) {
                 var cardB=new RoundedPanel(scrim,MouseBattery.Ui.WithAlpha(border,150)) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,134) };
                 var pickerLabel=new Label { Text="显示位置",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),Location=new Point(20,16),AutoSize=true };
-                cardB.Controls.Add(pickerLabel);
+                var pickerValue=new Label { Text=PositionPicker.PositionNames[position],Location=new Point(340,16),Size=new Size(160,18),Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),ForeColor=accent,TextAlign=ContentAlignment.MiddleRight };
+                cardB.Controls.Add(pickerLabel); cardB.Controls.Add(pickerValue);
                 positionPicker=new PositionPicker { Location=new Point(20,40),Size=new Size(480,68) };
-                positionPicker.SetTheme(light,foreground,muted,accent,scrim);
+                positionPicker.SetTheme(light);
                 positionPicker.Position=position;
                 positionPicker.PositionChanged+=delegate {
                     int selected=positionPicker.Position;
                     try { using(var key=Registry.CurrentUser.CreateSubKey(@"Software\MouseBatteryTray")) key.SetValue("TaskbarPosition",selected,RegistryValueKind.DWord); position=selected; }
                     catch(UnauthorizedAccessException e) { MessageBox.Show("无法保存位置："+e.Message,"鼠标电量"); }
                     catch(SecurityException e) { MessageBox.Show("无法保存位置："+e.Message,"鼠标电量"); }
+                    pickerValue.Text=PositionPicker.PositionNames[selected];
                 };
                 cardB.Controls.Add(positionPicker);
                 controls.Add(cardB);
                 rowY=bodyY+134+14;
             } else rowY=bodyY+10;
-            managerStartup=new ToggleSwitch(accent,border,MouseBattery.Ui.OnAccent(light),foreground) { Text="登录 Windows 后自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(20,rowY),Checked=Startup.Enabled };
+            managerStartup=new ToggleSwitch(light) { Text="登录 Windows 后自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(20,rowY),Checked=Startup.Enabled };
             managerStartup.CheckedChanged+=delegate { if(!updatingSettings) SetStartup(managerStartup.Checked); };
             controls.Add(managerStartup);
             var hairline=new Panel { Location=new Point(20,rowY+40),Size=new Size(MouseBattery.Ui.WidthCardWindow,1),BackColor=MouseBattery.Ui.WithAlpha(border,115) };
@@ -592,6 +629,8 @@ internal sealed class TrayContext : ApplicationContext {
             exit.FlatAppearance.BorderSize=0; exit.FlatAppearance.MouseOverBackColor=MouseBattery.Ui.GhostHover(light); exit.FlatAppearance.MouseDownBackColor=MouseBattery.Ui.GhostPressed(light); exit.Click+=delegate { ExitThread(); };
             var close=new Button { Text="完成",AccessibleName="完成设置并关闭窗口",Location=new Point(MouseBattery.Ui.WidthWindow-20-96,buttonY),Size=new Size(96,34),FlatStyle=FlatStyle.Flat,BackColor=accent,ForeColor=MouseBattery.Ui.OnAccent(light) };
             close.FlatAppearance.BorderSize=0; close.FlatAppearance.MouseOverBackColor=MouseBattery.Ui.AccentPlus(light); close.FlatAppearance.MouseDownBackColor=MouseBattery.Ui.Overlay(MouseBattery.Ui.Accent(light),255,MouseBattery.Ui.WithAlpha(foreground,54)); close.Click+=delegate { manager.Close(); };
+            // Enter/Esc close the window only; exiting the resident tool stays an explicit click.
+            manager.AcceptButton=close; manager.CancelButton=close;
             controls.Add(note); controls.Add(exit); controls.Add(close);
             manager.Controls.AddRange(controls.ToArray());
             // This programmatic layout is measured in 96-DPI units. Scale its
