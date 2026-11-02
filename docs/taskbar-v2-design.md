@@ -16,7 +16,7 @@
 
 ## 当前机器的只读证据
 
-Windows 11 Home build 26300。任务栏包含 `Windows.UI.Composition.DesktopWindowContentBridge`、`TrayNotifyWnd` 和兼容窗口。原始窗口树保存于 `E:\MouseBattery\evidence\taskbar-20261029\window-tree.txt`。
+Windows 11 Home build 26300。任务栏包含 `Windows.UI.Composition.DesktopWindowContentBridge`、`TrayNotifyWnd` 和兼容窗口。原始窗口树保存于 `<部署目录>\evidence\taskbar-20261029\window-tree.txt`。
 
 本轮未发现运行中的 MouseBattery、Windhawk / StartAllBack 进程；常见安装目录与卸载注册表也未发现 Windhawk / StartAllBack / ExplorerPatcher。这个结论仅覆盖已检查的路径，不证明磁盘上没有其他便携副本。
 
@@ -42,7 +42,7 @@ TrafficMonitor PR #2387 使用透明托盘图标、托盘可见性注册表和�
 
 ## 下一项必要决策
 
-已决策：用户选择“接受 Windhawk 扩展（推荐）”，允许配置常驻宿主并加载任务栏显示模块。安装命令曾被自动审批拒绝，用户随后手动完成便携安装；实际路径为 `E:\MouseBattery\taskbar-v2\downloads\Windhawk`。
+已决策：用户选择“接受 Windhawk 扩展（推荐）”，允许配置常驻宿主并加载任务栏显示模块。安装命令曾被自动审批拒绝，用户随后手动完成便携安装；实际路径为 `<部署目录>\taskbar-v2\downloads\Windhawk`。
 
 实现已通过本机原型：原生 XAML StackPanel 项目 / Grid 自动列独立占位，四个预设位置均得到 56 DIP 宽度。任务栏左端会额外为当前已有的 TrafficMonitor 保留前置空间；实测电量控件 x=262 DIP，避开其占用的 x=1..254 DIP 区域。
 

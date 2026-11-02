@@ -1,7 +1,7 @@
 # 状态矩阵取证结果与实施修订（交实现轮）
 
 日期：2026-11-02。依据：已交付的 v4.1.0（HEAD `6a25d9c`，正式 EXE `3B045AA2…5DB`，原生 DLL `B84D3691…99A8`）真机取证，不是读码推断。
-证据归档：`E:\MouseBattery\design-sheet\run-20261102-181538\`（T 表 19 格）、`E:\MouseBattery\design-sheet\tray\`（R 表 48 格）、`E:\MouseBattery\design-sheet\settings\settings-20261102-183017.png`（设置窗 **846×793 物理像素**，150% DPI）。
+证据归档：`<部署目录>\design-sheet\run-20261102-181538\`（T 表 19 格）、`<部署目录>\design-sheet\tray\`（R 表 48 格）、`<部署目录>\design-sheet\settings\settings-20261102-183017.png`（设置窗 **846×793 物理像素**，150% DPI）。
 取证工具：`tools/design-sheet/`（全部为新增文件，未进入 `build.ps1` 的显式 sources 列表，不影响产品构建）。
 
 ---
@@ -100,7 +100,7 @@ powershell -File tools\design-sheet\build-sheet.ps1
 powershell -File tools\design-sheet\capture-sheet.ps1
 powershell -File tools\design-sheet\tile-sheet.ps1 -RunDir <run-目录>
 powershell -File tools\design-sheet\build-tray.ps1
-E:\MouseBattery\design-sheet\bin\TraySheet.exe
+<部署目录>\design-sheet\bin\TraySheet.exe
 powershell -File tools\design-sheet\capture-settings-sheet.ps1
 ```
 
@@ -110,7 +110,7 @@ powershell -File tools\design-sheet\capture-settings-sheet.ps1
 
 ## S 表结果（v1，生产控件离屏渲染，96-DPI 逻辑栅格）
 
-产物：`E:\MouseBattery\design-sheet\settings\sheet-S-light.png`、`sheet-S-dark.png`（1080×1000）。渲染的是**生产类**（`ToggleSwitch` / `PositionPicker` / `RoundedPanel` / `Button`），不是仿制件；96-DPI 栅格只用于几何与状态判读，字形清晰度必须看 150% 的 PrintWindow 实截。
+产物：`<部署目录>\design-sheet\settings\sheet-S-light.png`、`sheet-S-dark.png`（1080×1000）。渲染的是**生产类**（`ToggleSwitch` / `PositionPicker` / `RoundedPanel` / `Button`），不是仿制件；96-DPI 栅格只用于几何与状态判读，字形清晰度必须看 150% 的 PrintWindow 实截。
 
 ### N5 ToggleSwitch 没有按设计实现（§3.7 整条未落地）— 已修复 2026-11-02
 
@@ -172,13 +172,13 @@ powershell -File tools\design-sheet\capture-settings-sheet.ps1
 | `src/Program.cs` | **N5** `ToggleSwitch` 重写：40×20 轨道 / ⌀14→⌀12 旋钮 / 标签左 + 轨道紧随（间距 12）/ rest·hover·pressed·disabled·focus 五态 / 焦点环改为 `Accent` 1.5 DIP 圆角环；构造改为 `ToggleSwitch(bool light)`，颜色全取 `Ui`。**N6** `PositionPicker` 重写：删除全部写死雾蓝，改为 token；选中胶囊 = 真胶囊镜像（identity 渐变 + 阈值数字 + 8.25pt）；ghost 槽 20×20 r6、hover/pressed 三态、焦点环；移除控件底部"位置：xxx"（值移到卡 B 右上 `pickerValue`），底部改为操作提示。**N7** `manager.AcceptButton=CancelButton=完成`。 |
 | `tools/design-sheet/SettingsSheet.cs` | 跟随新构造函数 / `SetTheme(light)` / `Gaming` 属性。 |
 
-**验证**：S 表重测（96-DPI 逻辑栅格）——轨道 **40×21 DIP**（原 35×17）、轨道起点 x=156（=标签宽+12）；禁用态与常态差 **940 px**、焦点态差 **163 px**（原各 60 px 抗锯齿噪声）；picker hover 差 415 px。设置窗候选实截 `E:\MouseBattery\design-sheet\settings\settings-candidate-20261102-185024.png`（846×793 物理像素，无绘制异常）。`test.ps1` 48 逻辑 + 15 IPC 全过。
+**验证**：S 表重测（96-DPI 逻辑栅格）——轨道 **40×21 DIP**（原 35×17）、轨道起点 x=156（=标签宽+12）；禁用态与常态差 **940 px**、焦点态差 **163 px**（原各 60 px 抗锯齿噪声）；picker hover 差 415 px。设置窗候选实截 `<部署目录>\design-sheet\settings\settings-candidate-20261102-185024.png`（846×793 物理像素，无绘制异常）。`test.ps1` 48 逻辑 + 15 IPC 全过。
 
 ### 仍未做
 
 - **N5/N6/N7 已在本文件记录的第二轮修复中完成**（见上）。
 - Q3/Q4 人判、Latte 12 格、降级横幅实截未完成。
-- 晋升到 `E:\MouseBattery\app\` 需你批准；晋升前需先 `--exit` 正式版并按既有流程核对双哈希。
+- 晋升到 `<部署目录>\app\` 需你批准；晋升前需先 `--exit` 正式版并按既有流程核对双哈希。
 
 ---
 
@@ -217,7 +217,7 @@ pad[5] @492..511
 
 ## Latte 真实会话结果（2026-11-02 第四轮，晋升后）
 
-环境：`AppsUseLightTheme=1`，任务栏底实测中位亮度 **219**（真浅色），12 格，跑表前后正式版均正常恢复。归档：`E:\MouseBattery\design-sheet\run-20261102-190215\`。
+环境：`AppsUseLightTheme=1`，任务栏底实测中位亮度 **219**（真浅色），12 格，跑表前后正式版均正常恢复。归档：`<部署目录>\design-sheet\run-20261102-190215\`。
 
 ### L1（缺陷）浅色下阈值数字对比度不足
 

@@ -8,7 +8,7 @@
 
 - **是什么**：Windows 11 任务栏鼠标电量显示工具。把罗技鼠标电量百分比渲染进系统任务栏（注入 Explorer 的原生 XAML 组件），外加 WinForms 设置窗口、悬停仪表卡。
 - **源码**：`D:\develop\Code\Codex\鼠标电量显示工具`
-- **交付**：`E:\MouseBattery\app\MouseBattery.exe`（正在后台运行，真机在线）
+- **交付**：`<部署目录>\app\MouseBattery.exe`（正在后台运行，真机在线）
 - **当前版本**：v3.8.3，Git 仓库已在源码目录（`git log` 可看全部演进）
 
 ## 第一步：必读材料（按序）

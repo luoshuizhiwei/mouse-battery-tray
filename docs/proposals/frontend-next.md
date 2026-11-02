@@ -26,7 +26,7 @@
 **改动点**
 - `src/Program.cs`：`PositionPicker.OnPaint` 内说明文字字号 8.25→9pt、胶囊内数字 7.5→8.5pt（第 ~270-320 行自绘区）。
 - `RoundedPanel`/`ToggleSwitch` 不动（它们已跟随窗体字体）。
-- 验证不依赖改系统 DPI：用 `capture-window.ps1`（已在 `E:\MouseBattery\robust-v3.2\`）在当前 DPI 截图比对前后。
+- 验证不依赖改系统 DPI：用 `capture-window.ps1`（已在 `<部署目录>\robust-v3.2\`）在当前 DPI 截图比对前后。
 
 **风险与回退**：极低。纯字号常量，git revert 即可。注意 picker 胶囊宽 36 DIP，8.5pt 两位数字仍放得下（100 三位数在 picker 内不存在，picker 显示的是当前电量最多三位，需实测 100% 不溢出）。
 

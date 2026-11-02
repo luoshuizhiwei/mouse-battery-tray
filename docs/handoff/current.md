@@ -4,10 +4,10 @@
 
 ## 当前交付锚点
 
-- 正式 EXE：`E:\MouseBattery\app\MouseBattery.exe`，SHA256 `1F0D90D4BE9C07270A76A21ECD76840705362DC0937D9807276140F808B636B3`
+- 正式 EXE：`<部署目录>\app\MouseBattery.exe`，SHA256 `1F0D90D4BE9C07270A76A21ECD76840705362DC0937D9807276140F808B636B3`
 - 内嵌原生 DLL SHA256: `6168B14A2E4F7F551D988E95FC00C1F9FC9DEAF6775153FB0E4E5510F349C200`
 - Git `main` 最新：v4.2.0 轮提交
-- 备份：`E:\MouseBattery\robust-v3.2\baseline\`（`MouseBattery-B5256950.exe`、`MouseBattery-E589774F.exe`、`MouseBattery-v410.exe`…）
+- 备份：`<部署目录>\robust-v3.2\baseline\`（`MouseBattery-B5256950.exe`、`MouseBattery-E589774F.exe`、`MouseBattery-v410.exe`…）
 
 ## v4.1.x 设计修复轮（2026-11-02）
 
@@ -20,7 +20,7 @@
 - **崩溃观察关闭（2026-11-02）**：Raw Input 修复后（256B 缓冲+边界校验）v3.8.6/v4.1.0/v4.2.0 三代连续稳定运行 110+ 分钟（历史崩溃窗口 ~30min），0xC0000374 隐患正式关闭。
 - **L1 浅色警示墨**：真实浅色会话实测 20% 琥珀仅 1.65:1、10% 红 2.84:1；新增 `Ui.WarnInk/CritInk`（仅文字混合，玻璃/刻度仍纯 token），实测 2.45 / 3.04（保守下界，实色理论 3.86/4.86）。
 
-验证：`test.ps1` 48 逻辑 + 15 IPC；`AppearanceProbe` 8/8；T 表双主题（`E:\MouseBattery\design-sheet\run-20261102-184449` 深色、`run-20261102-190215`/`190945` 浅色）；R 表 48 格；设置窗 150% 实截；**降级横幅实截 `settings-degraded-20261102-191533.png`**（假指纹探针 `DB754544…` 构建，846×679）。
+验证：`test.ps1` 48 逻辑 + 15 IPC；`AppearanceProbe` 8/8；T 表双主题（`<部署目录>\design-sheet\run-20261102-184449` 深色、`run-20261102-190215`/`190945` 浅色）；R 表 48 格；设置窗 150% 实截；**降级横幅实截 `settings-degraded-20261102-191533.png`**（假指纹探针 `DB754544…` 构建，846×679）。
 
 - **v4.2.0**：AssemblyVersion/FileVersion 升至 4.2.0.0；其余代码与 v4.1.x 修复轮一致（EXE `1F0D90D4…`，DLL `6168B14A…`）。晋升后真机 `Native=initialized`、真实 85%、`Startup=True`。
 
@@ -166,7 +166,7 @@ Qoder 设计师轮产出 `docs/proposals/catppuccin-design.md`（590 行，主�
 ### v3.3 验证
 
 - `test.ps1` 36 项逻辑 + 10 项 IPC 全过（不触及 ShowManager，守护未被改逻辑）。
-- 设置窗口三态截图（`E:\MouseBattery\robust-v3.2\settings-v330-*.png`，PrintWindow 实截）：深色正常态（胶囊在位置 0、三锚点、说明文字正确）、点击落点 1 后（胶囊移动、说明“紧邻时钟左侧”、注册表 TaskbarPosition=1）、假指纹降级态（琥珀横幅 + 指纹缩写 + 选择器隐藏 + “托盘显示”提示）。点击回位置 0 已还原注册表。
+- 设置窗口三态截图（`<部署目录>\robust-v3.2\settings-v330-*.png`，PrintWindow 实截）：深色正常态（胶囊在位置 0、三锚点、说明文字正确）、点击落点 1 后（胶囊移动、说明“紧邻时钟左侧”、注册表 TaskbarPosition=1）、假指纹降级态（琥珀横幅 + 指纹缩写 + 选择器隐藏 + “托盘显示”提示）。点击回位置 0 已还原注册表。
 - 注意：本次窗口开在 125% 缩放的屏幕（此前交接按 150% 验证），布局按 DPI 正确缩放，坐标点击按 1.25 系数命中，实际额外验证了非 150% DPI 下的布局自适应。
 - 未验收：浅色调色板未单独截图（改系统主题验证过于侵入；调色板代码与深色对称）；主题实时切换未实测（同因）；方向键路径未实测（需抢焦点，代码路径与点击共用 Apply）。降级横幅下的窗口交互只做了截图核对。
 
@@ -174,10 +174,10 @@ Qoder 设计师轮产出 `docs/proposals/catppuccin-design.md`（590 行，主�
 
 用户授权按健壮性、资源与性能、功能增强（指纹失效降级托盘）、轻整理四个方向优化。全部改动仅在托管 C# 侧；原生 `native/NativeHost.cpp`、`native/TaskbarView.h` 未改动，内嵌原生 DLL 与 v3.1 完全相同。
 
-- 正式 EXE：`E:\MouseBattery\app\MouseBattery.exe`。
+- 正式 EXE：`<部署目录>\app\MouseBattery.exe`。
 - EXE SHA256：`A338EB37552A84CEE50B3AA79A3BE3EC2A744694D44EA4B8B624F66AB072DCF9`（v3.3.0；v3.2.0 为 `9A6E35DE…B04C4`，v3.1 为 `1B0DBEA6…2A56A`）。
 - 内嵌原生 DLL SHA256：`4F157C4598657842A8FD98D3E3D99E269760385AE716FE73C637723C0A3D5A08`（未变）。
-- 本轮目录：`E:\MouseBattery\robust-v3.2`（`candidate-v330`、`degraded-probe*`、`baseline\MouseBattery-v3.1.exe` 与 `baseline\MouseBattery-v3.2.exe`、`appearance-probe.txt`、设置窗口截图）。
+- 本轮目录：`<部署目录>\robust-v3.2`（`candidate-v330`、`degraded-probe*`、`baseline\MouseBattery-v3.1.exe` 与 `baseline\MouseBattery-v3.2.exe`、`appearance-probe.txt`、设置窗口截图）。
 - 真机实测 78%、无线、未充电、位置 0、登录自启开启；Explorer 未重启。
 - taskbar.dll 指纹 `CA1E335A…0741` 不变；v3.1 交接见 [v3.1 历史](2026-10-29-taskbar-v3.1.0.md)。
 - 源码 Git 基线 `main` 分支（2026-10-30 建立，v3.2.0 首次提交），v3.3 以 feat 提交跟进。
@@ -190,7 +190,7 @@ Qoder 设计师轮产出 `docs/proposals/catppuccin-design.md`（590 行，主�
 - `src/NativeHost.cs`：`Dispose()` 生命周期日志写入包 try/catch，data 目录被占用不阻断退出清理。
 - `src/TrayIcon.cs`：新增无读数占位（`--`，正常色不入阈值红/黄）。
 - `src/Tests.cs`：新增 3 项占位渲染检查；`src/Probe.cs` 调用点同步签名。
-- `build.ps1`：sources 增加 `TrayIcon.cs`；新增 `-NativeDll` 参数（默认指向 v3.1 原生 DLL `E:\MouseBattery\appearance-v3\MB-UI-02-v1\MouseBattery.Native.dll`），不再隐式依赖候选目录里的旧 DLL。
+- `build.ps1`：sources 增加 `TrayIcon.cs`；新增 `-NativeDll` 参数（默认指向 v3.1 原生 DLL `<部署目录>\appearance-v3\MB-UI-02-v1\MouseBattery.Native.dll`），不再隐式依赖候选目录里的旧 DLL。
 - `build-probe.ps1`（新增）：AppearanceProbe 编译脚本化，内置 `/resource:<原生DLL>`；手动编译漏掉该资源会因 `GetManifestResourceStream` 返回 null 空引用（本轮实测确认）。
 - 版本号 3.2.0.0；README 同步降级行为。
 

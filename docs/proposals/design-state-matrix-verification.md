@@ -96,7 +96,7 @@ grep 全文：**探针从未设置 `Gaming`**，因此 `reserved` 恒为 0（[sr
 
 ## 4. 实测环境（本表必须在真实环境上跑，不接受 96-DPI 近似）
 
-来自 [E:\MouseBattery\design-sheet\env-probe.ps1](file:///E:/MouseBattery/design-sheet/env-probe.ps1) 的读数：
+来自 [<部署目录>\design-sheet\env-probe.ps1](file:///<部署目录>/design-sheet/env-probe.ps1) 的读数：
 
 | 项 | 值 | 对取证的约束 |
 |---|---|---|
@@ -175,7 +175,7 @@ static_assert(sizeof(Snapshot)==512)   ← 保持
 ## 8. 执行手册
 
 **阶段 0 — 准备（无需授权，不碰输入设备）**
-1. 建目录 `E:\MouseBattery\design-sheet\<HEAD-sha7>\<EXE哈希前8>\`。
+1. 建目录 `<部署目录>\design-sheet\<HEAD-sha7>\<EXE哈希前8>\`。
 2. 记基线：`git rev-parse HEAD`、正式 EXE/DLL SHA256、`TaskbarPosition`（现=0）、Wallpaper Engine 是否暂停。
 3. 编译 N1–N8（先跑 `-DryRun`：不写映射、不动鼠标，只验证拼图与采样管线）。
 

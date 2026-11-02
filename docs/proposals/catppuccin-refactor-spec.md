@@ -5,7 +5,7 @@
 ## 0. 项目位置与铁律（违反即返工）
 
 - 源码：`D:\develop\Code\Codex\鼠标电量显示工具`（Git 仓库，先 `git log --oneline` 看演进）
-- 交付：`E:\MouseBattery\app\MouseBattery.exe`（正在后台运行，真机在线）
+- 交付：`<部署目录>\app\MouseBattery.exe`（正在后台运行，真机在线）
 - 先读：`README.md`、`docs/handoff/current.md`（若与 git log 不符以 git 为准）
 
 **铁律（用户逐条确认过，不可违反）：**
@@ -76,7 +76,7 @@ Catppuccin 官方 hex（已实测，直接用）：
 .\build-standalone-native.ps1
 
 # 3. 托管候选（-NativeDll 指向第 2 步的新产物）
-.\build.ps1 -OutputDirectory 'E:\MouseBattery\robust-v3.2\candidate-v400' -NativeDll 'E:\MouseBattery\standalone\candidate\MouseBattery.Native.dll'
+.\build.ps1 -OutputDirectory '<部署目录>\robust-v3.2\candidate-v400' -NativeDll '<部署目录>\standalone\candidate\MouseBattery.Native.dll'
 
 # 4. 原生渲染回归（重建 AppearanceProbe 用新 DLL，必须带 /resource）
 .\build-probe.ps1
@@ -84,7 +84,7 @@ Catppuccin 官方 hex（已实测，直接用）：
 
 # 5. 真机验收：三轮开/关设置存活（v3.8.3 崩溃回归）、双鼠 kind 行、DetachResult=0
 
-# 6. 晋升：备份旧 EXE 到 baseline，再替换 E:\MouseBattery\app\MouseBattery.exe
+# 6. 晋升：备份旧 EXE 到 baseline，再替换 <部署目录>\app\MouseBattery.exe
 ```
 
 ## 5. 验收清单（每项都要真机证据）
@@ -92,7 +92,7 @@ Catppuccin 官方 hex（已实测，直接用）：
 - [ ] test.ps1 48+12 全过
 - [ ] AppearanceProbe 8 项全过（含刻度线点亮断言）
 - [ ] 设置窗口 PrintWindow 实截：正常态 / 降级横幅态 / 位置选择器
-- [ ] 悬停卡实截（`E:\MouseBattery\robust-v3.2\capture-hover.ps1` 实时坐标版）
+- [ ] 悬停卡实截（`<部署目录>\robust-v3.2\capture-hover.ps1` 实时坐标版）
 - [ ] 三轮开/关设置存活
 - [ ] 双鼠差异化：PRO X=Mauve、M750L=Sapphire 正确
 - [ ] 正常退出 DetachResult=0
@@ -100,7 +100,7 @@ Catppuccin 官方 hex（已实测，直接用）：
 
 ## 6. 回退
 
-任何一步出问题：`git stash` 回退到 v3.8.3（commit 6844302），正式 EXE 用 `E:\MouseBattery\robust-v3.2\baseline\` 里的备份恢复。
+任何一步出问题：`git stash` 回退到 v3.8.3（commit 6844302），正式 EXE 用 `<部署目录>\robust-v3.2\baseline\` 里的备份恢复。
 
 ## 7. 交付后
 
