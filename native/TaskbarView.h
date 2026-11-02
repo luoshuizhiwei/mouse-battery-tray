@@ -252,7 +252,7 @@ bool Insert(FrameworkElement const& root,int position) {
     kindRow.Children().Append(v->kindGlyph); kindRow.Children().Append(v->tooltipKind);
     v->kindRow=kindRow; v->kindRow.Visibility(Visibility::Collapsed);
     card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(statusRow); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipConnection); card.Children().Append(v->tooltipOther); card.Children().Append(v->kindRow);
-    v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({8,8,8,8}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->host,v->tooltip);
+    v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({8,8,8,8}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->pill,v->tooltip); // pill only: hovering the empty slot corners must not open the card
     v->menu=MenuFlyout();
     auto iconFor=[](wchar_t const* glyph){ FontIcon i; i.FontFamily(FontFamily(L"Segoe MDL2 Assets")); i.Glyph(glyph); return i; };
     v->settings=MenuFlyoutItem(); v->settings.Text(L"设置"); v->settings.Icon(iconFor(L"\uE713"));
@@ -262,7 +262,7 @@ bool Insert(FrameworkElement const& root,int position) {
     v->toggleToken=v->toggle.Click([](auto const&,auto const&){Launch(L"--toggle-startup");});
     v->exitToken=v->exit.Click([](auto const&,auto const&){Launch(L"--exit");});
     v->menu.Items().Append(v->settings); v->menu.Items().Append(v->toggle); v->menu.Items().Append(MenuFlyoutSeparator()); v->menu.Items().Append(v->exit);
-    v->host.ContextFlyout(v->menu);
+    v->pill.ContextFlyout(v->menu); // right-click menu also scoped to the visible pill
     // Hover reveals the glass pill; left click stays inert on purpose so a
     // stray click on the readout can never trigger anything.
     v->hoverEnter=v->pill.PointerEntered([](auto const&,auto const&){ if(g_view){ g_view->hover=true; PaintPill(*g_view); } });
@@ -330,7 +330,7 @@ void Update(Work& work) {
         v.tooltipOther.Visibility(Visibility::Visible);
         v.tooltipOther.Text(detail.substr(nl+1));
     } else v.tooltipOther.Visibility(Visibility::Collapsed);
-    bool gaming=detail.find(L"电竞")!=std::wstring::npos;
+    bool gaming=s.reserved!=0; // personality rides the reserved field, not tooltip text
 
     v.tooltipValue.Text(std::to_wstring(s.percent)+L"%");
     v.tooltipValue.Foreground(SolidColorBrush(color));

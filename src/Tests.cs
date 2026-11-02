@@ -22,7 +22,7 @@ internal static class Tests {
         var state=new DisplayState();
         Check(!state.Visible(0),"cold start with no device stays hidden");
         state.Apply(new[]{wired},1000);
-        Check(state.Visible(1000) && state.Tooltip(1000).Contains("PRO X 2 DEX") && state.Tooltip(1000).EndsWith("电竞"),"valid device shows its name and personality tag");
+        Check(state.Visible(1000) && state.Tooltip(1000).Contains("PRO X 2 DEX") && state.Tooltip(1000).IndexOf('\n')<0,"valid device shows a clean single-line tooltip (personality rides reserved field)");
         state.MarkFailed(new[]{wired.Path},6000);
         Check(state.Visible(15999) && state.DisplayedFailed(15999),"failed attempts keep the readout marked within 15 seconds");
         Check(!state.Visible(16000),"repeated failure must not reset the 15-second expiry");
@@ -35,7 +35,7 @@ internal static class Tests {
         proX.Path=wired.Path;
         state.Apply(new[]{proX,m750},40000);
         Check(state.Tooltip(40000).Contains("PRO X 2 DEX") && state.Tooltip(40000).Contains("M750"),"hover lists every known mouse");
-        Check(state.Tooltip(40000).Contains("PRO X 2 DEX") && state.Tooltip(40000).Contains("Signature Plus M750 L") && state.Tooltip(40000).Contains("95% · 2.4G") && state.Displayed(40000).Percent==85 && state.Tooltip(40000).EndsWith("办公"),"tooltip lists both mice and tags the displayed personality");
+        Check(state.Tooltip(40000).Contains("PRO X 2 DEX") && state.Tooltip(40000).Contains("Signature Plus M750 L") && state.Tooltip(40000).Contains("95% · 2.4G") && state.Displayed(40000).Percent==85 && !state.Tooltip(40000).Contains("办公"),"tooltip lists both mice without any category word");
         state.SetActive("unit-m750");
         Check(state.Displayed(40000).UnitId=="unit-m750","raw-input active device wins the pill");
         state.Apply(new[]{m750},52000);

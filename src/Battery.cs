@@ -249,7 +249,6 @@ internal sealed class DisplayState {
             if(x==v || x.Last==null || nowMs-x.LastSuccessMs>=900000) continue;
             text+="\n"+x.Last.Name+" · "+x.Last.Percent+"% · "+x.Last.Connection+((x.Failed || nowMs-x.LastSuccessMs>=15000) ? " · 旧读数" : "");
         }
-        text+="\n"+(v.Last.Gaming ? "电竞" : "办公");
         return text;
     }
     internal string Describe(long nowMs) {

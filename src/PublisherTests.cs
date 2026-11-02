@@ -42,6 +42,16 @@ internal static class PublisherTests {
             Check(reader.ReadInt32(16)==1 && reader.ReadInt32(20)==85 && reader.ReadInt32(28)==3,"newest device leads the snapshot fields");
             byte[] text2=new byte[464]; reader.ReadArray(48,text2,0,464);
             Check(Encoding.Unicode.GetString(text2).Contains("M750L") && Encoding.Unicode.GetString(text2).Contains("\nPRO X 2 DEX · 95% · 2.4G"),"companion device reaches the native tooltip second line");
+            state.SetActive("unit-m750");
+            publisher.Publish(state,18500,0,true);
+            Check(reader.ReadInt32(44)==0,"office personality rides the reserved field as 0");
+            var proXGaming=BatteryReading.Parse(new byte[]{95,8,0,0},"PRO X 2 DEX","unit-prox","2.4G");
+            proXGaming.Path=wired.Path; proXGaming.Gaming=true;
+            state.Apply(new[]{proXGaming},19000); state.SetActive("unit-prox");
+            publisher.Publish(state,19000,0,true);
+            Check(reader.ReadInt32(44)==1,"gaming personality rides the reserved field as 1");
+            var text3=new byte[464]; reader.ReadArray(48,text3,0,464);
+            Check(!Encoding.Unicode.GetString(text3).Contains("电竞") && !Encoding.Unicode.GetString(text3).Contains("办公"),"tooltip no longer carries the personality line");
             publisher.Dispose();
             Check(reader.ReadInt32(16)==0 && (reader.ReadInt32(4)&1)==0,"normal exit immediately hides native display while mapping stays open");
         }

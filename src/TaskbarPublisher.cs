@@ -31,6 +31,9 @@ internal sealed class TaskbarPublisher : IDisposable {
         Buffer.BlockCopy(BitConverter.GetBytes(processId),0,payload,32,4);
         Buffer.BlockCopy(BitConverter.GetBytes(position),0,payload,36,4);
         Buffer.BlockCopy(BitConverter.GetBytes(startup ? 1 : 0),0,payload,40,4);
+        // Device personality rides the reserved field (ABI-compatible): native
+        // reads it for the product-line chip instead of parsing tooltip lines.
+        Buffer.BlockCopy(BitConverter.GetBytes(shown!=null && shown.Gaming ? 1 : 0),0,payload,44,4);
         byte[] text=Encoding.Unicode.GetBytes(state.Tooltip(now));
         Buffer.BlockCopy(text,0,payload,48,Math.Min(text.Length,Capacity-50));
         view.Write(4,++sequence); Thread.MemoryBarrier();
