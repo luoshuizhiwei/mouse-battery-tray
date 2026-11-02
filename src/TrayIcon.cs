@@ -9,8 +9,8 @@ internal static class TrayIcon {
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr h);
     internal static Color Foreground(int percent,bool light) {
         if(percent<0) return MouseBattery.Ui.GetColor(light, Color.FromArgb(25,25,25), Color.White);
-        if(percent<=10) return MouseBattery.Ui.GetColor(light, MouseBattery.Ui.RedLight, MouseBattery.Ui.RedDark);
-        if(percent<=20) return MouseBattery.Ui.GetColor(light, MouseBattery.Ui.YellowLight, MouseBattery.Ui.YellowDark);
+        if(percent<=10) return MouseBattery.Ui.CritInk(light);
+        if(percent<=20) return MouseBattery.Ui.WarnInk(light);
         return MouseBattery.Ui.GetColor(light, Color.FromArgb(25,25,25), Color.White);
     }
     static System.Drawing.Drawing2D.GraphicsPath ShellPath(float x,float y,float w,float h,float radius) {

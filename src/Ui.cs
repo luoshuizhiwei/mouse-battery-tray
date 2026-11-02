@@ -63,6 +63,11 @@ internal static class Ui {
     internal static Color AccentPlus(bool light) { return Overlay(Accent(light),255,WithAlpha(Text(light),34)); }
     internal static Color GhostHover(bool light) { return Overlay(Base(light),255,WithAlpha(Text(light),22)); }
     internal static Color GhostPressed(bool light) { return Overlay(Base(light),255,WithAlpha(Text(light),34)); }
+    // Light-theme warning inks: Latte Yellow/Red glyphs measure 1.65:1 / 2.84:1
+    // on a real light taskbar, so threshold *text* mixes toward Text; the glass
+    // and the track keep the pure token hue.
+    internal static Color WarnInk(bool light) { return light ? Overlay(YellowLight,255,WithAlpha(TextLight,170)) : YellowDark; }
+    internal static Color CritInk(bool light) { return light ? Overlay(RedLight,255,WithAlpha(TextLight,48)) : RedDark; }
 
     // ── Geometry tokens (DIP; WinForms controls use 96-DPI units = DIP) ──
     internal const float CornerCard=12f;

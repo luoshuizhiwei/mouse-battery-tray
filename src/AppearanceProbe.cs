@@ -31,9 +31,10 @@ class AppearanceProbe {
                 // Pill width less its 4 DIP side padding and 1 DIP side borders.
                 double content=Metric(status,"numberWidth")+Metric(status,"suffixWidth")+1.5;
                 if(content>42) throw new Exception("Percent text overflows: "+status);
-                string rgb=value<=10 ? "210,15,57" : value<=20 ? "223,142,29" : "76,79,105";
+                // L1: light-theme warning ink is a Yellow/Red-over-Text composite.
+                string rgbLight=value<=10 ? "184,27,66" : value<=20 ? "125,100,79" : "76,79,105";
                 string dark=value<=10 ? "243,139,168" : value<=20 ? "249,226,175" : "205,214,244";
-                if(!status.Contains("textRGB="+rgb) && !status.Contains("textRGB="+dark)) throw new Exception("Wrong threshold color: "+status);
+                if(!status.Contains("textRGB="+rgbLight) && !status.Contains("textRGB="+dark)) throw new Exception("Wrong threshold color: "+status);
                 // Signature scale: the 20% tick lights amber once crossed, the
                 // 10% tick goes red; both stay neutral above the thresholds.
                 string hiTick=value<=20 ? "223,142,29" : "108,111,133";

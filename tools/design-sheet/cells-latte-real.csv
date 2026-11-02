@@ -1,0 +1,14 @@
+# Real Latte session: no themeOverride (col 10 absent => 0 = follow host).
+# Same ids as the Mocha run so the sheets diff cell-by-cell.
+T-01,100,0,1,1,2,PRO X 2 DEX,1,0
+T-02,85,0,1,1,2,PRO X 2 DEX,1,0
+T-03,21,0,1,1,2,PRO X 2 DEX,1,0
+T-04,20,0,1,1,2,PRO X 2 DEX,1,0
+T-05,10,0,1,1,2,PRO X 2 DEX,1,0
+T-06,0,0,1,1,2,PRO X 2 DEX,1,0
+T-07,100,0,1,0,3,Signature Plus M750 L,1,0
+T-08,85,0,1,0,3,Signature Plus M750 L,1,0
+T-09,21,0,1,0,3,Signature Plus M750 L,1,0
+T-10,20,0,1,0,3,Signature Plus M750 L,1,0
+T-11,10,0,1,0,3,Signature Plus M750 L,1,0
+T-12,0,0,1,0,3,Signature Plus M750 L,1,0

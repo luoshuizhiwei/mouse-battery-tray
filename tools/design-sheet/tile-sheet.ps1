@@ -30,6 +30,12 @@ function New-Sheet([int]$w, [int]$h) {
   return @{ Bmp = $bmp; G = $g }
 }
 $font = New-Object System.Drawing.Font('Consolas', [single]9)
+function CardOk($cell) {
+  # Light cards contrast less against a light wallpaper; the dark-tuned 30000
+  # threshold would report a present card as missing (L2).
+  if ($cell.restMed -gt 128) { return ($cell.cardPixels -ge 8000) }
+  return ($cell.cardPixels -ge 30000)
+}
 $ink = [System.Drawing.Brushes]::White
 $warn = [System.Drawing.Brushes]::Orange
 
@@ -79,7 +85,7 @@ for ($i = 0; $i -lt $cells.Count; $i++) {
   $col = $i % $cols; $row = [int][Math]::Floor($i / $cols)
   $x = 6 + $col * ($tileW + 10); $y = 6 + $row * ($tileH + $labelH + 10)
   $p = Join-Path $PngDir ('hover-' + $c.id + '.png')
-  $g.DrawString((Caption 'HOVER' $c), $font, $(if ($c.cardPixels -ge 30000) { $ink } else { $warn }), $x, $y)
+  $g.DrawString((Caption 'HOVER' $c), $font, $(if (CardOk $c) { $ink } else { $warn }), $x, $y)
   $y += $labelH
   if (Test-Path $p) {
     $b = New-Object System.Drawing.Bitmap($p)
@@ -133,8 +139,8 @@ $sheet3.Bmp.Save($out3, [System.Drawing.Imaging.ImageFormat]::Png)
 $sheet3.G.Dispose(); $sheet3.Bmp.Dispose()
 
 # Console summary: the machine-judged numbers only, no interpretation.
-$ok = @($cells | Where-Object { $_.cardPixels -ge 30000 })
-$lit = @($cells | Where-Object { $_.deltaPct -ge 0.08 })
+$ok = @($cells | Where-Object { CardOk $_ })
+$lit = @($cells | Where-Object { [Math]::Abs($_.deltaPct) -ge 0.08 })
 $conf = @($cells | Where-Object { $_.confirm -eq 'CONFIRMED' })
 $centers = @($cells | ForEach-Object { if ($_.restInkR -ge 0) { ($_.restInkL + $_.restInkR) / 2.0 } })
 Write-Output ('cardAppeared=' + $ok.Count + '/' + $cells.Count + ' glassLit(>=8%)=' + $lit.Count + '/' + $cells.Count + ' confirmed=' + $conf.Count + '/' + $cells.Count)

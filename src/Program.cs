@@ -147,7 +147,7 @@ internal sealed class PositionPicker : Control {
             using(var p=new Pen(Ui.WithAlpha(identity,175))) g.DrawPath(p,path);
         }
         string label=percent<0 ? "--" : percent.ToString();
-        Color numberColor=percent<0 ? muted : percent<=10 ? Ui.Red(light) : percent<=20 ? Ui.Yellow(light) : text;
+        Color numberColor=percent<0 ? muted : percent<=10 ? Ui.CritInk(light) : percent<=20 ? Ui.WarnInk(light) : text;
         using(var font=new Font(Font.FontFamily,8.25f,FontStyle.Bold,GraphicsUnit.Point))
             TextRenderer.DrawText(g,label,font,Rectangle.Round(pill),numberColor,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
         if(Focused) using(var p=new Pen(Ui.WithAlpha(accent,235),1.5f))
@@ -495,8 +495,8 @@ internal sealed class TrayContext : ApplicationContext {
     }
     private void UpdateManagerDisplay(bool visible) {
         Color normalText=GetColor(managerLight, MouseBattery.Ui.TextLight, MouseBattery.Ui.TextDark);
-        Color amberText=GetColor(managerLight, MouseBattery.Ui.YellowLight, MouseBattery.Ui.YellowDark);
-        Color redText=GetColor(managerLight, MouseBattery.Ui.RedLight, MouseBattery.Ui.RedDark);
+        Color amberText=MouseBattery.Ui.WarnInk(managerLight);
+        Color redText=MouseBattery.Ui.CritInk(managerLight);
 
         var shown=visible ? state.Displayed(uptime.ElapsedMilliseconds) : null;
         if(shown!=null) {

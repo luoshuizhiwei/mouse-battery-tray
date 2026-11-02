@@ -93,6 +93,15 @@ inline Color CatIdentity(bool gaming,bool light) { return gaming ? CatMauve(ligh
 inline Color CatScrim(bool light) { return light ? Color{255,246,247,249} : Color{255,48,49,66}; }      // #F6F7F9 / #303142 (pre-composed)
 inline Color CatOnAccent(bool light) { return light ? CatSurface(light) : CatBase(light); }             // text on accent fills
 inline Color WithAlphaA(Color c,int a) { Color r=c; r.A=(uint8_t)(a>255?255:a); return r; }
+// Pre-composed blend: `top` at `alpha` over `bottom` (Ui.Overlay equivalent).
+inline Color MixColor(Color bottom,Color top,int alpha) {
+    double a=alpha/255.0;
+    return Color{255,(uint8_t)(top.R*a+bottom.R*(1-a)),(uint8_t)(top.G*a+bottom.G*(1-a)),(uint8_t)(top.B*a+bottom.B*(1-a))};
+}
+// L1: on a real light taskbar the Latte warning glyphs measured 1.65:1/2.84:1,
+// so only the *ink* mixes toward Text; glass/fill keep the pure token hue.
+inline Color CatWarnInk(bool light) { return light ? MixColor(CatYellow(true),CatText(true),170) : CatYellow(false); }
+inline Color CatCritInk(bool light) { return light ? MixColor(CatRed(true),CatText(true),48) : CatRed(false); }
 
 std::unique_ptr<View> g_view;
 
@@ -343,7 +352,7 @@ void Update(Work& work) {
     int topA=light ? (int)((gaming?60:46)*mul) : (int)((gaming?88:66)*mul);
     int botA=light ? (int)((gaming?18:14)*mul) : (int)((gaming?26:20)*mul);
     int strA=light ? (int)((gaming?120:80)*mul) : (int)((gaming?140:90)*mul);
-    Color color=warnRed ? CatRed(light) : warnYellow ? CatYellow(light) : CatText(light);
+    Color color=warnRed ? CatCritInk(light) : warnYellow ? CatWarnInk(light) : CatText(light);
     Color fillTop=WithAlphaA(pillColor,topA);
     Color fillBottom=WithAlphaA(pillColor,botA);
     Color stroke=WithAlphaA(pillColor,strA);
@@ -432,7 +441,7 @@ void Update(Work& work) {
     bool staleRow=detail.find(L"旧读数")!=std::wstring::npos;
     v.tooltipOther.Foreground(SolidColorBrush(staleRow ? WithAlphaA(CatYellow(light),210) : WithAlphaA(muted,225)));
     v.trackBackground.Background(SolidColorBrush(CatBorder(light)));
-    v.tooltipFill.Background(SolidColorBrush(s.percent<=20 ? color : identity));
+    v.tooltipFill.Background(SolidColorBrush(s.percent<=20 ? pillColor : identity));
     v.tooltipFill.Width(200.0*s.percent/100.0);
     Automation::AutomationProperties::SetName(v.host,hstring(s.tooltip));
     v.toggle.Text(s.startup ? L"关闭开机启动" : L"开启开机启动");
