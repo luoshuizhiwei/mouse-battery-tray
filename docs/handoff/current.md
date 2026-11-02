@@ -1,13 +1,13 @@
 # 鼠标电量工具 — 当前交接
 
-更新：2026-11-02, Asia/Hong_Kong。当前正式交付 **v4.1.x 设计修复轮**（AssemblyVersion 仍 3.8.5.0，未改）。
+更新：2026-11-02, Asia/Hong_Kong。当前正式交付 **v4.2.0**（AssemblyVersion 4.2.0.0）。
 
 ## 当前交付锚点
 
-- 正式 EXE：`E:\MouseBattery\app\MouseBattery.exe`，SHA256 `B52569502E1D014448730FC7832F0063A12855A60AD0776F9A275BE36C1CB34F`
-- 内嵌原生 DLL SHA256: `51F5EB89822E85754A5A3E58DFFF37815BC40786B6B9328C85D25A1273B347D8`
-- Git `main` 最新：设计修复轮 `34253c1`（其后有交接更新提交）
-- 备份：`E:\MouseBattery\robust-v3.2\baseline\`（`MouseBattery-E589774F.exe`、`MouseBattery-v410.exe`…）
+- 正式 EXE：`E:\MouseBattery\app\MouseBattery.exe`，SHA256 `1F0D90D4BE9C07270A76A21ECD76840705362DC0937D9807276140F808B636B3`
+- 内嵌原生 DLL SHA256: `6168B14A2E4F7F551D988E95FC00C1F9FC9DEAF6775153FB0E4E5510F349C200`
+- Git `main` 最新：v4.2.0 轮提交
+- 备份：`E:\MouseBattery\robust-v3.2\baseline\`（`MouseBattery-B5256950.exe`、`MouseBattery-E589774F.exe`、`MouseBattery-v410.exe`…）
 
 ## v4.1.x 设计修复轮（2026-11-02）
 
@@ -19,9 +19,11 @@
 - **快照尾部扩展**：`tooltip[216]` + `themeOverride@480` + 两个保留时间戳，sizeof 仍 512、既有偏移不变；生产恒写 0。
 - **L1 浅色警示墨**：真实浅色会话实测 20% 琥珀仅 1.65:1、10% 红 2.84:1；新增 `Ui.WarnInk/CritInk`（仅文字混合，玻璃/刻度仍纯 token），实测 2.45 / 3.04（保守下界，实色理论 3.86/4.86）。
 
-验证：`test.ps1` 48 逻辑 + 15 IPC；`AppearanceProbe` 8/8；T 表双主题（`E:\MouseBattery\design-sheet\run-20261102-184449` 深色、`run-20261102-190215`/`190945` 浅色）；R 表 48 格；设置窗 150% 实截。
+验证：`test.ps1` 48 逻辑 + 15 IPC；`AppearanceProbe` 8/8；T 表双主题（`E:\MouseBattery\design-sheet\run-20261102-184449` 深色、`run-20261102-190215`/`190945` 浅色）；R 表 48 格；设置窗 150% 实截；**降级横幅实截 `settings-degraded-20261102-191533.png`**（假指纹探针 `DB754544…` 构建，846×679）。
 
-未验收：Q3/Q4 人眼判读、无降级横幅实截、200% DPI、真实重新登录。取证工具在 `tools/design-sheet/`（未进产品构建）。
+- **v4.2.0**：AssemblyVersion/FileVersion 升至 4.2.0.0；其余代码与 v4.1.x 修复轮一致（EXE `1F0D90D4…`，DLL `6168B14A…`）。晋升后真机 `Native=initialized`、真实 85%、`Startup=True`。
+
+未验收：Q3/Q4 人眼判读、200% DPI、真实重新登录。取证工具在 `tools/design-sheet/`（未进产品构建）。
 
 ## v4.1.0 设计实施完成（2026-11-02）
 
