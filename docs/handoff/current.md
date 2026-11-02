@@ -9,6 +9,10 @@
 - Git `main` 最新：（即将提交）
 - 备份：`E:\MouseBattery\robust-v3.2\baseline\` (保留 v3.8.3)
 
+## 设计轮完成（v4.1.0 方案，待实现）
+
+Qoder 设计师轮产出 `docs/proposals/catppuccin-design.md`（590 行，主会话审查通过，Git e758414）。核心：11 条可复核缺陷审计（F1"85% %"双百分号、F2 刻度线画在 80%/90% 却按 20%/10% 点亮——历史遗留真 bug、F3 玻璃底未走 token、F4 蓝牙误标 2.4G）+ 五带信息架构 + 三档材质（Edge-lit/Frosted/Warning）+ 身份色玻璃底推导 + token 总表与断言迁移清单。实施顺序 S1-S8 在文档 §7，R2（刻痕容器裁切）为 S3 首查项。崩溃观察：RawInput=on 已稳定 140+ 分钟（历史崩溃窗口 ~30min），接近关闭。
+
 ## v3.7 → v3.8.3 演进摘要（详见 git log）
 
 - **v3.7.0 双鼠标支持**：PRO X 2 DEX + M750L，任务栏自动跟随当前在用的（Raw Input），悬停卡列全两只。
