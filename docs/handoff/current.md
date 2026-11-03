@@ -46,6 +46,15 @@ v4.2.0 于 11-02/11-03 凌晨两次隔夜崩溃（0xC0000374），推翻此前"�
 - EXE：`2F3DF331…5F8D`；DLL：`FF3C0B26…30F4`；Git `32281fe`。
 - 验证：48+15+8 全过，v4.2.1 在线 RawInput=on。**观察期重启**：隔夜稳定性是本轮修复的最终验收。
 
+## v4.2.2 设置窗口视觉修复（2026-11-03 晚，用户截图驱动）
+
+用户深色模式截图暴露 4 处缺陷，全部修复（Git 33282a3，EXE 30A22061…243E）：
+1. 卡内 Label 继承窗体 Base 色作背景 → 手绘 Surface 卡上出现深色矩形：全部 BackColor=Transparent。
+2. 位置选择器 artwork/命中区只覆盖控件 2/3：manager.Scale 放大控件但 OnPaint 写死 480 坐标 → OnPaint 加 ScaleTransform(Width/480)，ZoneAt 反变换，picker 内字体 GraphicsUnit.Pixel（Point 会在变换下双重缩放）。
+3. 窗口 502→524（v4.2.1 的 sed 静默失败，本轮断言式确认生效）。
+4. pickerValue 蓝底蓝字 → Text 色透明底。
+UIA 实测 150% DPI 下窗口 846×826px（=564×550 DIP），按钮完整。教训：**自绘父控件+子 Label 必须显式 Transparent；manager.Scale 只缩 bounds 不缩 OnPaint 坐标系**。
+
 ## v3.7 → v3.8.3 演进摘要（详见 git log）
 
 - **v3.7.0 双鼠标支持**：PRO X 2 DEX + M750L，任务栏自动跟随当前在用的（Raw Input），悬停卡列全两只。
