@@ -22,6 +22,7 @@ internal sealed class NativeHost : IDisposable {
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string name,string title);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window,out uint pid);
     readonly IntPtr library;
+    string dllPath; // kept for defensive re-loads before native calls
     readonly AttachFunction attach;
     readonly DetachFunction detach;
     readonly Stopwatch timer=Stopwatch.StartNew();
@@ -52,6 +53,7 @@ internal sealed class NativeHost : IDisposable {
                 if(BitConverter.ToString(sha.ComputeHash(file)).Replace("-","")!=nativeHash) throw new IOException("应用内部组件校验失败："+path);
             }
         } else using(var file=new FileStream(path,FileMode.CreateNew,FileAccess.Write)) file.Write(bytes,0,bytes.Length);
+        dllPath=path;
         library=LoadLibraryEx(path,IntPtr.Zero,0x100|0x800);
         if(library==IntPtr.Zero) throw new Win32Exception();
         IntPtr start=GetProcAddress(library,"NativeAttach"), stop=GetProcAddress(library,"NativeDetach");
@@ -90,7 +92,10 @@ internal sealed class NativeHost : IDisposable {
         uint pid;GetWindowThreadProcessId(taskbar,out pid);
         uint owner;uint state=ReadHealth(out owner);
         if(!attached || explorerPid!=pid || state==3 || (owner!=0 && owner!=(uint)Process.GetCurrentProcess().Id)) {
-            uint error=attach((uint)Process.GetCurrentProcess().Id);
+            IntPtr pin=LoadLibraryEx(dllPath,IntPtr.Zero,0x100|0x800); // +1 ref: guarantee mapped during the call
+            uint error;
+            try { error=attach((uint)Process.GetCurrentProcess().Id); }
+            finally { if(pin!=IntPtr.Zero) FreeLibrary(pin); }
             if(error!=0) {ReadHealth(out owner);throw new Win32Exception((int)error,"无法连接 Windows 任务栏："+Status);}
             attached=true;explorerPid=pid;
             state=ReadHealth(out owner);
@@ -99,7 +104,10 @@ internal sealed class NativeHost : IDisposable {
     }
 
     public void Dispose() {
-        StopResult=attached ? detach() : 0;
+        if(attached) {
+            IntPtr pin=LoadLibraryEx(dllPath,IntPtr.Zero,0x100|0x800);
+            try { StopResult=detach(); } finally { if(pin!=IntPtr.Zero) FreeLibrary(pin); }
+        } else StopResult=0;
         try {
             string log=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"data","native-lifecycle.txt");
             Directory.CreateDirectory(Path.GetDirectoryName(log));

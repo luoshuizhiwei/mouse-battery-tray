@@ -262,6 +262,12 @@ bool Insert(FrameworkElement const& root,int position) {
     v->tooltipConnection=TextBlock(); v->tooltipConnection.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipConnection.FontSize(11.0); v->tooltipConnection.Opacity(0.75); v->tooltipConnection.VerticalAlignment(VerticalAlignment::Center);
     StackPanel statusLine; statusLine.Orientation(Orientation::Horizontal); // ④ state left / transport right, one rail
     statusLine.Children().Append(statusRow);
+    // The transport text MUST be in the visual tree: Update() writes to it every
+    // dispatch, and mutating an unparented WinRT object long-term corrupts the
+    // heap (the overnight 0xC0000374 pattern). A spacer pushes it to the right.
+    Windows::UI::Xaml::Controls::Border railSpacer; railSpacer.HorizontalAlignment(HorizontalAlignment::Stretch); railSpacer.Width(1);
+    statusLine.Children().Append(railSpacer);
+    statusLine.Children().Append(v->tooltipConnection);
     v->statusLine=statusLine; v->statusRailText=v->tooltipConnection;
     // Signature scale: ticks at the REAL 20%/10% thresholds, taller than the
     // slot so lighting up reads as a gauge notch (F2); container must be 14 high.
