@@ -77,6 +77,7 @@ internal sealed class PositionPicker : Control {
     internal static readonly string[] PositionNames={"系统托盘与时钟区域左侧","紧邻时钟左侧","时钟右侧","任务栏最左侧"};
     static readonly int[] VisualOrder={3,0,1,2};
     const float BarWidth=480f,BarHeight=40f;
+    float PaintScale() { return (float)Width/BarWidth; } // control is manager.Scale-d; artwork is not
     int position,hover=-1,percent=-1;
     bool light=true,gaming=false,pressed=false;
     internal event Action PositionChanged;
@@ -113,6 +114,7 @@ internal sealed class PositionPicker : Control {
     static Color Mix(Color background,Color top,int alpha) { return Ui.Overlay(background,255,Ui.WithAlpha(top,alpha)); }
     protected override void OnPaint(PaintEventArgs e) {
         var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.ScaleTransform(PaintScale(),PaintScale());
         Color baseColor=Ui.Base(light),border=Ui.Border(light),surface=Ui.Surface(light),text=Ui.Text(light),muted=Ui.Subtext(light),accent=Ui.Accent(light);
         Color identity=Ui.Identity(gaming,light);
         Color barFill=Mix(baseColor,border,120);
@@ -149,14 +151,14 @@ internal sealed class PositionPicker : Control {
         }
         string label=percent<0 ? "--" : percent.ToString();
         Color numberColor=percent<0 ? muted : percent<=10 ? Ui.CritInk(light) : percent<=20 ? Ui.WarnInk(light) : text;
-        using(var font=new Font(Font.FontFamily,8.25f,FontStyle.Bold,GraphicsUnit.Point))
+        using(var font=new Font(Font.FontFamily,11f,FontStyle.Bold,GraphicsUnit.Pixel))
             TextRenderer.DrawText(g,label,font,Rectangle.Round(pill),numberColor,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
         if(Focused) using(var p=new Pen(Ui.WithAlpha(accent,235),1.5f))
             using(var path=RoundPath(new RectangleF(pill.X-2,pill.Y-2,pill.Width+4,pill.Height+4),10)) g.DrawPath(p,path);
         using(var font=new Font(Font.FontFamily,7.5f,FontStyle.Regular,GraphicsUnit.Point))
             TextRenderer.DrawText(g,"点击落点或用 ← → 切换",font,new Point(0,(int)(BarHeight+6)),Ui.WithAlpha(muted,175),TextFormatFlags.NoPrefix);
     }
-    int ZoneAt(Point location) { var zones=Zones(); for(int i=0;i<4;i++) if(zones[i].Contains(location)) return i; return -1; }
+    int ZoneAt(Point location) { float k=PaintScale(); if(k>0) location=new Point((int)(location.X/k),(int)(location.Y/k)); var zones=Zones(); for(int i=0;i<4;i++) if(zones[i].Contains(location)) return i; return -1; }
     void Apply(int value) {
         bool changed=value!=position;
         position=value; Focus(); Invalidate();
@@ -560,13 +562,13 @@ internal sealed class TrayContext : ApplicationContext {
                 var banner=new RoundedPanel(bannerBg,bannerLine) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,58) };
                 var rail=new Panel { Location=new Point(0,0),Size=new Size(3,58),BackColor=MouseBattery.Ui.WithAlpha(MouseBattery.Ui.Yellow(light),210) };
                 banner.Controls.Add(rail);
-                var bannerLabel=new Label { Text="任务栏版本未适配，当前以托盘图标显示电量（指纹 "+ShortHash(degradedReason)+"），适配后自动恢复",Location=new Point(20,6),Size=new Size(470,46),Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=bannerText };
+                var bannerLabel=new Label { Text="任务栏版本未适配，当前以托盘图标显示电量（指纹 "+ShortHash(degradedReason)+"），适配后自动恢复",Location=new Point(20,6),Size=new Size(470,46),Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=bannerText ,BackColor=Color.Transparent};
                 banner.Controls.Add(bannerLabel);
                 controls.Add(banner);
                 bodyY+=70;
             }
             var statusCard=new RoundedPanel(surface,border) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,172) };
-            managerDevice=new Label { Location=new Point(20,20),Size=new Size(320,24),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeHeading),FontStyle.Bold) };
+            managerDevice=new Label { Location=new Point(20,20),Size=new Size(320,24),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeHeading),FontStyle.Bold) ,BackColor=Color.Transparent};
             chip=new Panel { Location=new Point(380,18),Size=new Size(120,20) };
             chip.Paint+=delegate(object sender,PaintEventArgs e) {
                 var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
@@ -578,12 +580,12 @@ internal sealed class TrayContext : ApplicationContext {
                 g.FillEllipse(new SolidBrush(id),8,7,6,6);
                 TextRenderer.DrawText(g,gamingNow?"PRO X":"Signature",new Font("Segoe UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeFaint),FontStyle.Bold),new Rectangle(18,0,chip.Width-20,chip.Height),id,TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
             };
-            managerPercent=new Label { Location=new Point(20,46),Size=new Size(160,52),Font=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeNumeral),FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft };
-            managerUnit=new Label { Text="%",Location=new Point(180,72),Size=new Size(30,24),Font=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeUnit)),ForeColor=MouseBattery.Ui.WithAlpha(muted,205),TextAlign=ContentAlignment.MiddleLeft };
-            managerCharge=new Label { Location=new Point(300,55),Size=new Size(200,18),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),TextAlign=ContentAlignment.MiddleRight };
-            managerConnection=new Label { Location=new Point(300,75),Size=new Size(200,16),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,190),TextAlign=ContentAlignment.MiddleRight,AutoEllipsis=true };
+            managerPercent=new Label { Location=new Point(20,46),Size=new Size(160,52),Font=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeNumeral),FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft ,BackColor=Color.Transparent};
+            managerUnit=new Label { Text="%",Location=new Point(180,72),Size=new Size(30,24),Font=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeUnit)),ForeColor=MouseBattery.Ui.WithAlpha(muted,205),TextAlign=ContentAlignment.MiddleLeft ,BackColor=Color.Transparent};
+            managerCharge=new Label { Location=new Point(300,55),Size=new Size(200,18),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),TextAlign=ContentAlignment.MiddleRight ,BackColor=Color.Transparent};
+            managerConnection=new Label { Location=new Point(300,75),Size=new Size(200,16),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,190),TextAlign=ContentAlignment.MiddleRight,AutoEllipsis=true ,BackColor=Color.Transparent};
             managerTrack=new Panel { Location=new Point(20,114),Size=new Size(448,MouseBattery.Ui.HeightTrack),BackColor=border,AccessibleName="当前电量刻度" };
-            managerCompanion=new Label { Location=new Point(20,134),Size=new Size(480,17),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,190),Visible=false };
+            managerCompanion=new Label { Location=new Point(20,134),Size=new Size(480,17),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,190),Visible=false ,BackColor=Color.Transparent};
             managerTrack.Paint+=delegate(object sender,PaintEventArgs e) {
                 int level=Math.Max(0,managerLevel);
                 var shownNow=state.Displayed(uptime.ElapsedMilliseconds);
@@ -602,7 +604,7 @@ internal sealed class TrayContext : ApplicationContext {
             int rowY;
             if(!degraded) {
                 var cardB=new RoundedPanel(scrim,MouseBattery.Ui.WithAlpha(border,150)) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,134) };
-                var pickerLabel=new Label { Text="显示位置",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),Location=new Point(20,16),AutoSize=true };
+                var pickerLabel=new Label { Text="显示位置",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),Location=new Point(20,16),AutoSize=true ,BackColor=Color.Transparent};
                 var pickerValue=new Label { Text=PositionPicker.PositionNames[position],Location=new Point(320,16),Size=new Size(160,18),Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),ForeColor=Ui.Text(light),BackColor=Color.Transparent,TextAlign=ContentAlignment.MiddleRight };
                 cardB.Controls.Add(pickerLabel); cardB.Controls.Add(pickerValue);
                 positionPicker=new PositionPicker { Location=new Point(20,40),Size=new Size(480,68) };

@@ -81,7 +81,7 @@ internal static class Ui {
     internal const int WidthCardNative=240;      // hover card
     internal const int WidthContentNative=200;   // hover card content column (1% = 2 DIP)
     internal const int WidthWindow=560;
-    internal const int HeightWindowNormal=502;
+    internal const int HeightWindowNormal=524;
     internal const int HeightWindowDegraded=426;
     internal const int WidthCardWindow=520;
     internal const int WidthCardContent=480;     // 1% = 4.8 DIP
