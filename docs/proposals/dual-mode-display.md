@@ -142,3 +142,67 @@ struct Profile { sha256, timestamp, sizeOfImage, checksum,
 5. profile 表放在托管与原生两处是否违反"单一事实源"？有没有更稳妥的共享方式（资源段 / 生成头文件）？
 6. 动态窗口高度 + 原生 RadioButton 在 125%/150% DPI 下有没有已知坑（v4.2.2 刚因为 `manager.Scale` 只缩 bounds 不缩自绘坐标系踩过）？
 7. 有没有更简单、更贴合 Windows 的第三条路（例如完全放弃内嵌、只用托盘，但把托盘做成系统级"电池设备"样式）值得优先于方案 B？
+
+
+---
+
+## 七、评审修订（2026-11-04，依据 `dual-mode-display-review.md`）
+
+> 本节为**最终实施依据**，与前文冲突处以本节为准。评审文档已完整阅读并确认：方向性判断、7 问依据、严重缺陷（热卸载竞态 / 置灰反写 / 托盘状态维度 / 诊断混淆）、实施顺序调整。
+
+### 7.1 五项强制修订
+
+1. **取消跨进程无感热切换 → 设置保存 + 平滑自我重启（Restart）**
+   - 模式切换不调用 `native.Dispose()`/重建；只写 `DisplayMode` 注册表，然后走"退出当前实例 + 以相同参数重新拉起"。
+   - 复用现有单实例 Mutex（`Program.cs:51`）：先释放 Mutex，再 `Application.ExitThread()`，由一个新启动的进程接管；或 `ExitThread` 后由现有 `--background` 启动入口拉起。实现时保证**旧进程完全退出后新进程才抢到 Mutex**（Mutex 释放与进程退出间的竞态用短暂等待/重试消除）。
+   - 理由（评审 Q1/严重缺陷 1）：`NativeDetach` 在 Explorer 端异步摘 XAML 树 + 最多 6s 等待循环，UI 线程同步调用必然假死；快速连点切换会造成 `g_lifecycle` 互斥量错乱与 XAML 节点重复插入。**重启让一切状态从冷启动重建，零竞态。**
+
+2. **修复设置保存逻辑：`taskbarUnavailable` 时置灰项绝不覆写 `preferredMode`**
+   - 保存动作只在"用户实际改变了单选按钮"时写 `Mode.Save()`；**点击"完成"不读 UI 选中态反写**。
+   - 当 Taskbar 单选被禁用时，UI 显示 Tray 选中，但 `preferredMode` 保持用户原值（如 Taskbar）不变；`ActiveMode` 由 `taskbarUnavailable` 强制为 Tray。
+   - 修正评审【高】缺陷 2：修改开机启动等其他选项并点完成，不得把降级态悄悄写成用户偏好。
+
+3. **Profile 表 SSOT 收敛至 Native 层**
+   - `src/NativeHost.cs` **删除**全部哈希/PE 常量；`native/NativeHost.cpp` 持有唯一 Profile 表（sha256/timestamp/size/checksum/4 RVA/elementOffset）。
+   - 托管侧不再校验指纹，只调用原生导出的探测函数（或 `NativeAttach` 返回详细状态码 + 指纹字符串）；不支持时由原生返回哈希，C# 仅负责提示与托盘兜底。
+   - S5-A 用**微软公共符号服务器 PDB**（`https://msdl.microsoft.com/download/symbols`）校对符号，替代纯 AOB 盲猜（评审 Q4）；仍坚持"指纹白名单 + 未知一律安全降级"，**禁止运行时 AOB 强刷**（评审"绝对不该做"第 3 条）。
+
+4. **动态窗口高度严格基于 96-DPI 标量累加**
+   - `TotalDpi96Height = Header + CardA + [CardB] + ModeCard + CommandBand + Margins`，全部用 96-DPI 逻辑常量相加，赋给 `ClientSize` 后**最后一步**统一 `manager.Scale(uiScale)`。
+   - **禁止**在缩放后读取子控件 `Bottom/Height` 累加（会 ×uiScale²，评审 Q6）。
+   - 模式选择用**原生 RadioButton**、固定高度 28px、`AutoSize=false`、留足宽度余量；不自绘。
+
+5. **托盘提升基于应用自身注册表标记，仅首次一次**
+   - `HKCU\Software\MouseBatteryTray\TrayPromotedOnce` (DWord)：缺失/为 0 时，首次进入 Tray 模式写系统 `IsPromoted=1` 并置本标记为 1；之后**永不覆写**系统键。
+   - 理由（评审 Q3）：Win11 首次会写 `IsPromoted=0`（键不缺失），"判缺失"会变空操作；且用户主动选 Tray 必须看得见，不能收进溢出区。用户后续在系统设置里隐藏图标由系统自由管理。
+   - 遵守"绝对不该做"第 2 条：**绝不代码批量删除 `NotifyIconSettings` 子项**；单路径唯一 + 进程内单 NotifyIcon 即可保证最多 1 条（评审 Q2）。
+
+### 7.2 采纳的其它修订
+
+- 诊断串区分：主动 Tray 输出 `Native=托盘模式（用户选择）`，强制降级才输出 `降级托盘（指纹…）`（评审【低】缺陷 4）。
+- 主题切换 `OnPreferenceChanged` 对两模式分支都有效（评审 Q1 遗漏检查点）。
+- 托盘模式补充状态反馈维度：图标在设备重连/充电时给出可辨细节（评审【中】缺陷 3）——本阶段先记边界，S4 视成本决定，不阻塞方案 A 闭环。
+- "绝对不该做"全盘接受：不在 UI 线程同步 Detach、不删系统托盘注册表树、不运行时 AOB 强刷、不为模式卡片自绘单选控件。
+
+### 7.3 调整后的实施顺序（S5 独立分闸）
+
+```
+S1      DisplayMode.cs + Mode.Parse/Load/Save + 单测
+ └─► S2-A  托管三量模型（preferredMode/taskbarUnavailable/ActiveMode），
+            冷启动按配置分流；剥离热切换；Restart 机制（保存+平滑重启）
+      └─► S3  托盘单实例 + TrayPromotedOnce 首次提升 + 诊断串区分
+           └─► S4  设置窗口原生 RadioButton 模式卡 + 96-DPI 标量动态高度
+                + 置灰不反写 + DPI 验收
+                 └─► ★ 阶段交付：方案 A 完整稳定闭环（零热切换风险）
+                      └─► S5-A  PDB 符号校对 + Profile 表 SSOT 收敛至 Native
+                           └─► S5-B  G1 闸门：4 项 RVA 反汇编语义断言
+                                └─► S6  全链集成 + 长周期（隔夜）稳定性观察
+```
+
+- S2-A 只做**冷启动分流**，切换靠 Restart；不引入任何跨进程热卸载。
+- S5 作为独立高风险模块后置，**G1 不过则安全回退**，方案 A 交付物不受影响。
+- 评审"第三条路"（纯用户态 Fluent 托盘、彻底放弃注入）记录在案，作为长期演进方向；本轮仍按用户明确要求"两种方案都要"推进，S5 不通过时它自然成为默认形态。
+
+### 7.4 本轮执行范围
+
+按用户指令：**先执行 S1 → S2-A → S3 → S4，交付方案 A 稳定闭环**；S5 独立分闸，本轮只把 SSOT 接口/占位准备好（不改任何 RVA、不做适配、不触碰 G1），待方案 A 验收后再单独启动。
