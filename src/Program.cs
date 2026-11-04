@@ -13,8 +13,8 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("鼠标电量")]
-[assembly: System.Reflection.AssemblyVersion("4.2.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("4.2.1.0")]
+[assembly: System.Reflection.AssemblyVersion("4.3.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("4.3.0.0")]
 namespace MouseBattery {
 internal static class Startup {
     const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -49,6 +49,7 @@ internal static class Program {
             trace.AppendLine(readings.Count==0 ? "ERROR="+source.LastError : string.Join("\n",Array.ConvertAll(readings.ToArray(),delegate(BatteryReading r) { return string.Format("OK {0} {1}% {2} {3} unit={4}",r.Name,r.Percent,r.ChargeText,r.Connection,r.UnitId); })));
             File.WriteAllText(args[1],trace.ToString(),Encoding.UTF8); return readings.Count==0 ? 1 : 0;
         }
+        if(args.Length>0 && args[0]=="--restart") Thread.Sleep(1200);
         bool created;
         using(var single=new Mutex(true,@"Local\MouseBatteryTray.Instance.1",out created)) {
             if(!created) {
@@ -264,7 +265,9 @@ internal sealed class TrayContext : ApplicationContext {
     readonly TaskbarPublisher publisher=new TaskbarPublisher();
     NativeHost native;
     NotifyIcon trayIcon; Icon trayIconImage;
-    bool degraded,trayIconLight,startupEnabled,degradedAnnounced,trayPromoted;
+    DisplayMode preferredMode; bool taskbarUnavailable;
+    internal DisplayMode ActiveMode { get { return taskbarUnavailable ? DisplayMode.Tray : preferredMode; } }
+    bool trayIconLight,startupEnabled,degradedAnnounced,trayPromoted,userChoseTray;
     string degradedReason;
     int trayPercent=int.MinValue,trayPromoteAttempts;
     long nextTrayPromote;
@@ -295,10 +298,12 @@ internal sealed class TrayContext : ApplicationContext {
     [DllImport("user32.dll",SetLastError=true)] static extern uint GetRawInputDeviceInfoW(IntPtr hDevice,uint command,IntPtr data,ref uint size);
     internal TrayContext(EventWaitHandle signal,bool manage) {
         show=signal; showOnStart=manage;
-        // A taskbar.dll fingerprint mismatch degrades to tray-icon display
-        // instead of exiting; every other native failure stays fatal.
-        try { native=new NativeHost(); }
-        catch(NotSupportedException e) { EnterDegraded(e.Message); }
+        preferredMode=Mode.Load(); userChoseTray=preferredMode==DisplayMode.Tray;
+        EnsureTrayIcon(); trayIcon.Visible=userChoseTray;
+        if(!userChoseTray) {
+            try { native=new NativeHost(); }
+            catch(NotSupportedException e) { EnterDegraded(e.Message); }
+        }
         startupEnabled=Startup.Enabled;
         using(var key=Registry.CurrentUser.OpenSubKey(@"Software\MouseBatteryTray")) {
             object value=key==null ? null : key.GetValue("TaskbarPosition");
@@ -324,7 +329,7 @@ internal sealed class TrayContext : ApplicationContext {
             bool light=AppsUseLightTheme();
             if(light==managerLight) return;
             managerLight=light;
-            if(trayIcon!=null) { trayIconLight=light; trayPercent=int.MinValue; UpdateTrayIcon(state.Visible(uptime.ElapsedMilliseconds),state.Tooltip(uptime.ElapsedMilliseconds)); }
+            if(trayIcon!=null) { trayIconLight=light; trayPercent=int.MinValue; if(trayIcon.Visible) UpdateTrayIcon(state.Visible(uptime.ElapsedMilliseconds),state.Tooltip(uptime.ElapsedMilliseconds)); }
             if(manager!=null && !manager.IsDisposed) { manager.Close(); ShowManager(); }
         });
     }
@@ -358,6 +363,15 @@ internal sealed class TrayContext : ApplicationContext {
             if(key!=null) state.SetActive(key);
         } catch { }
     }
+    private void SaveModeAndRestart(DisplayMode mode) {
+        if(mode==preferredMode) return;
+        try { Mode.Save(mode); }
+        catch(UnauthorizedAccessException e) { MessageBox.Show("无法保存显示方式："+e.Message,"鼠标电量"); return; }
+        catch(SecurityException e) { MessageBox.Show("无法保存显示方式："+e.Message,"鼠标电量"); return; }
+        try { var start=new ProcessStartInfo(Application.ExecutablePath,"--restart --background"); start.UseShellExecute=false; System.Diagnostics.Process.Start(start); }
+        catch(Win32Exception e) { MessageBox.Show("无法重启："+e.Message,"鼠标电量"); return; }
+        ExitThread();
+    }
     internal static string ShortHash(string reason) {
         if(reason==null) return "详见 data\\status.txt";
         var match=System.Text.RegularExpressions.Regex.Match(reason,"[0-9A-Fa-f]{64}");
@@ -372,7 +386,7 @@ internal sealed class TrayContext : ApplicationContext {
         if(quit.WaitOne(0)) { ExitThread(); return; }
         if(toggleStartup.WaitOne(0)) SetStartup(!Startup.Enabled);
         if(show.WaitOne(0) || showOnStart) { showOnStart=false; ShowManager(); }
-        if(degraded) TryPromoteTrayIcon();
+        if(ActiveMode==DisplayMode.Tray) TryPromoteTrayIcon();
         RefreshDisplay();
         if(closing) return;
         if(!busy && uptime.ElapsedMilliseconds>=nextPoll) Poll();
@@ -403,7 +417,7 @@ internal sealed class TrayContext : ApplicationContext {
         long now=uptime.ElapsedMilliseconds;
         bool visible=state.Visible(now);
         string text=state.Tooltip(now);
-        if(degraded) UpdateTrayIcon(visible,text);
+        if(ActiveMode==DisplayMode.Tray) UpdateTrayIcon(visible,text);
         else {
             publisher.Publish(state,now,position,startupEnabled);
             try { native.Maintain(); }
@@ -412,7 +426,8 @@ internal sealed class TrayContext : ApplicationContext {
         }
         string status=visible ? text : "未连接或电量暂不可用\n"+failure;
         if(manager!=null && !manager.IsDisposed) UpdateManagerDisplay(visible);
-        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nActiveKey="+(state.ActiveKey??"(none)")+"\nRawInput="+(rawInputOk?"on":"off")+"\nDevices="+state.Describe(now)+"\nPollInterval="+pollInterval+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
+        string nativeDiag=native!=null ? native.Status : (taskbarUnavailable ? "降级托盘（"+degradedReason+"）" : "托盘模式（用户选择）");
+        string diagnostic="DisplayMode="+preferredMode+"\nActiveMode="+ActiveMode+"\nModeUnavailable="+taskbarUnavailable+"\nTaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nActiveKey="+(state.ActiveKey??"(none)")+"\nRawInput="+(rawInputOk?"on":"off")+"\nDevices="+state.Describe(now)+"\nPollInterval="+pollInterval+"\nNative="+nativeDiag;
         if(diagnostic!=lastStatus) {
             try { File.WriteAllText(statusPath,DateTimeOffset.Now.ToString("o")+"\n"+diagnostic,Encoding.UTF8); }
             catch(IOException ex) { ShowFileError(ex.Message); }
@@ -432,18 +447,20 @@ internal sealed class TrayContext : ApplicationContext {
     }
     // Fallback display for an unadapted taskbar.dll: keep reading the mouse and
     // show the percentage as a tray icon until the taskbar module is ported.
+    private void EnsureTrayIcon() {
+        if(trayIcon!=null) return;
+        trayIconLight=AppsUseLightTheme();
+        trayIcon=new NotifyIcon { Text="鼠标电量",Visible=false };
+        var menu=new ContextMenuStrip();
+        menu.Items.Add("打开设置",null,delegate { ShowManager(); });
+        menu.Items.Add("退出工具",null,delegate { ExitThread(); });
+        trayIcon.ContextMenuStrip=menu;
+        trayIcon.DoubleClick+=delegate { ShowManager(); };
+    }
     private void EnterDegraded(string reason) {
-        degraded=true; degradedReason=reason;
-        if(native!=null) { native.Dispose(); native=null; }
-        if(trayIcon==null) {
-            trayIconLight=AppsUseLightTheme();
-            trayIcon=new NotifyIcon { Text="鼠标电量",Visible=true };
-            var menu=new ContextMenuStrip();
-            menu.Items.Add("打开设置",null,delegate { ShowManager(); });
-            menu.Items.Add("退出工具",null,delegate { ExitThread(); });
-            trayIcon.ContextMenuStrip=menu;
-            trayIcon.DoubleClick+=delegate { ShowManager(); };
-        }
+        taskbarUnavailable=true; degradedReason=reason;
+        native=null; // no cross-process hot detach (review)
+        EnsureTrayIcon(); trayIcon.Visible=true;
         UpdateTrayIcon(state.Visible(uptime.ElapsedMilliseconds),state.Tooltip(uptime.ElapsedMilliseconds));
         if(!degradedAnnounced) { degradedAnnounced=true; trayIcon.ShowBalloonTip(8000,"鼠标电量",reason,ToolTipIcon.Warning); }
     }
@@ -460,28 +477,23 @@ internal sealed class TrayContext : ApplicationContext {
     }
     // Windows 11 parks new tray icons in the overflow flyout; a degraded fallback
     // must be visible at a glance, so promote the entry the shell already created.
+    // One-shot promotion. Windows pre-creates IsPromoted=0 for a new icon, so
+    // we gate on OUR OWN marker instead. The system tree is touched only once.
     private void TryPromoteTrayIcon() {
-        if(trayPromoted || trayPromoteAttempts>=10) return;
-        long now=uptime.ElapsedMilliseconds;
-        if(now<nextTrayPromote) return;
-        nextTrayPromote=now+2000; trayPromoteAttempts++;
+        if(trayPromoted || Mode.PromotionDone()) { trayPromoted=true; return; }
         try {
             using(var key=Registry.CurrentUser.OpenSubKey(@"Control Panel\NotifyIconSettings",true)) {
-                if(key==null) { trayPromoted=true; return; }
+                if(key==null) return;
                 string exe=Application.ExecutablePath;
                 foreach(string name in key.GetSubKeyNames()) {
                     string path;
                     using(var sub=key.OpenSubKey(name)) { if(sub==null) continue; path=sub.GetValue("ExecutablePath") as string; }
                     if(!string.Equals(path,exe,StringComparison.OrdinalIgnoreCase)) continue;
                     using(var sub=key.OpenSubKey(name,true)) if(sub!=null) sub.SetValue("IsPromoted",1,RegistryValueKind.DWord);
-                    trayPromoted=true; return;
+                    Mode.MarkPromotionDone(); trayPromoted=true; return;
                 }
             }
-        }
-        // Promotion is a courtesy; an inaccessible key must not break the fallback.
-        catch(SecurityException) { trayPromoted=true; }
-        catch(UnauthorizedAccessException) { trayPromoted=true; }
-        catch(IOException) { trayPromoted=true; }
+        } catch(SecurityException) { } catch(UnauthorizedAccessException) { } catch(IOException) { }
     }
     internal static bool AppsUseLightTheme() {
         using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) return key!=null && (key.GetValue("AppsUseLightTheme") is int) && (int)key.GetValue("AppsUseLightTheme")!=0;
@@ -540,7 +552,10 @@ internal sealed class TrayContext : ApplicationContext {
             Color accent=MouseBattery.Ui.Accent(light);
             Color border=MouseBattery.Ui.Border(light);
             Color scrim=MouseBattery.Ui.Scrim(light);
-            manager=new Form { Text="鼠标电量", AutoScaleMode=AutoScaleMode.None, Font=new Font("Microsoft YaHei UI",9f), ClientSize=new Size(MouseBattery.Ui.WidthWindow,degraded ? MouseBattery.Ui.HeightWindowDegraded : MouseBattery.Ui.HeightWindowNormal), BackColor=background,ForeColor=foreground, FormBorderStyle=FormBorderStyle.FixedDialog, MaximizeBox=false, MinimizeBox=false, StartPosition=FormStartPosition.CenterScreen };
+            bool showBanner=taskbarUnavailable && preferredMode==DisplayMode.Taskbar;
+            bool showPositionCard=ActiveMode==DisplayMode.Taskbar;
+            int height96=76+(showBanner?70:0)+172+12+(showPositionCard?134+14:0)+96+12+78+34+20;
+            manager=new Form { Text="鼠标电量", AutoScaleMode=AutoScaleMode.None, Font=new Font("Microsoft YaHei UI",9f), ClientSize=new Size(MouseBattery.Ui.WidthWindow,height96), BackColor=background,ForeColor=foreground, FormBorderStyle=FormBorderStyle.FixedDialog, MaximizeBox=false, MinimizeBox=false, StartPosition=FormStartPosition.CenterScreen };
             var controls=new List<Control>();
             int headerY=20;
             var mark=new Panel { Location=new Point(20,headerY),Size=new Size(26,26) };
@@ -555,7 +570,7 @@ internal sealed class TrayContext : ApplicationContext {
             var subtitle=new Label { Text="任务栏与启动设置",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,210),Location=new Point(58,headerY+24),AutoSize=true };
             controls.Add(mark); controls.Add(heading); controls.Add(subtitle);
             int bodyY=76;
-            if(degraded) {
+            if(ActiveMode==DisplayMode.Tray) {
                 Color bannerBg=MouseBattery.Ui.Overlay(background,255,MouseBattery.Ui.WithAlpha(MouseBattery.Ui.Yellow(light),light?22:26));
                 Color bannerLine=MouseBattery.Ui.WithAlpha(MouseBattery.Ui.Yellow(light),105);
                 Color bannerText=light ? MouseBattery.Ui.YellowLight : MouseBattery.Ui.WithAlpha(MouseBattery.Ui.YellowDark,245);
@@ -602,7 +617,7 @@ internal sealed class TrayContext : ApplicationContext {
             controls.Add(statusCard);
             bodyY+=172+12;
             int rowY;
-            if(!degraded) {
+            if(ActiveMode==DisplayMode.Taskbar) {
                 var cardB=new RoundedPanel(scrim,MouseBattery.Ui.WithAlpha(border,150)) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,134) };
                 var pickerLabel=new Label { Text="显示位置",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),Location=new Point(20,16),AutoSize=true ,BackColor=Color.Transparent};
                 var pickerValue=new Label { Text=PositionPicker.PositionNames[position],Location=new Point(320,16),Size=new Size(160,18),Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),ForeColor=Ui.Text(light),BackColor=Color.Transparent,TextAlign=ContentAlignment.MiddleRight };
@@ -621,12 +636,27 @@ internal sealed class TrayContext : ApplicationContext {
                 controls.Add(cardB);
                 rowY=bodyY+134+14;
             } else rowY=bodyY+10;
+            var modeCard=new RoundedPanel(surface,border) { Location=new Point(20,rowY),Size=new Size(MouseBattery.Ui.WidthCardWindow,96) };
+            var modeLabel=new Label { Text="显示方式",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody),FontStyle.Bold),Location=new Point(20,14),AutoSize=true,BackColor=Color.Transparent };
+            modeCard.Controls.Add(modeLabel);
+            var rbTaskbar=new RadioButton { Text="任务栏（原生同构）",Location=new Point(20,42),Size=new Size(220,28),AutoSize=false,Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),ForeColor=foreground };
+            var rbTray=new RadioButton { Text="托盘图标",Location=new Point(260,42),Size=new Size(160,28),AutoSize=false,Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),ForeColor=foreground };
+            updatingSettings=true;
+            rbTaskbar.Checked=ActiveMode==DisplayMode.Taskbar;
+            rbTray.Checked=ActiveMode==DisplayMode.Tray;
+            updatingSettings=false;
+            rbTaskbar.Enabled=!taskbarUnavailable;
+            if(taskbarUnavailable) { var hint=new Label { Text="当前系统版本暂未适配（指纹 "+ShortHash(degradedReason)+"）",Location=new Point(20,72),Size=new Size(470,18),Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeFaint)),ForeColor=muted,BackColor=Color.Transparent }; modeCard.Controls.Add(hint); }
+            rbTaskbar.CheckedChanged+=delegate { if(rbTaskbar.Checked && !updatingSettings) SaveModeAndRestart(DisplayMode.Taskbar); };
+            rbTray.CheckedChanged+=delegate { if(rbTray.Checked && !updatingSettings) SaveModeAndRestart(DisplayMode.Tray); };
+            modeCard.Controls.Add(rbTaskbar); modeCard.Controls.Add(rbTray);
+            controls.Add(modeCard); rowY+=96+12;
             managerStartup=new ToggleSwitch(light) { Text="登录 Windows 后自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(20,rowY),Checked=Startup.Enabled };
             managerStartup.CheckedChanged+=delegate { if(!updatingSettings) SetStartup(managerStartup.Checked); };
             controls.Add(managerStartup);
             var hairline=new Panel { Location=new Point(20,rowY+40),Size=new Size(MouseBattery.Ui.WidthCardWindow,1),BackColor=MouseBattery.Ui.WithAlpha(border,115) };
             controls.Add(hairline);
-            var note=new Label { Text=degraded ? "关闭窗口后继续在托盘显示" : "关闭窗口后继续在任务栏显示",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMicro)),ForeColor=muted,Location=new Point(20,rowY+50),AutoSize=true };
+            var note=new Label { Text=ActiveMode==DisplayMode.Tray ? "关闭窗口后继续在托盘显示" : "关闭窗口后继续在任务栏显示",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMicro)),ForeColor=muted,Location=new Point(20,rowY+50),AutoSize=true };
             int buttonY=rowY+78;
             var exit=new Button { Text="退出工具",Location=new Point(MouseBattery.Ui.WidthWindow-20-96-12-96,buttonY),Size=new Size(96,34),FlatStyle=FlatStyle.Flat,BackColor=background,ForeColor=muted };
             exit.FlatAppearance.BorderSize=0; exit.FlatAppearance.MouseOverBackColor=MouseBattery.Ui.GhostHover(light); exit.FlatAppearance.MouseDownBackColor=MouseBattery.Ui.GhostPressed(light); exit.Click+=delegate { ExitThread(); };

@@ -54,6 +54,10 @@ internal static class Tests {
         Check(TrayIcon.Foreground(-1,false)==TrayIcon.Foreground(95,false),"missing reading keeps the normal color, not a threshold");
         using(var missing=TrayIcon.Create(-1,false,24)) Check(missing.Width==24 && missing.Height==24,"missing-reading placeholder icon renders");
         Check(TrayIcon.Render(-1,true,16)!=null,"missing-reading placeholder bitmap renders");
+        Check(Mode.Parse(null)==DisplayMode.Taskbar,"missing display mode falls back to taskbar");
+        Check(Mode.Parse("1")==DisplayMode.Taskbar,"wrong-typed display mode falls back to taskbar");
+        Check(Mode.Parse(0)==DisplayMode.Taskbar && Mode.Parse(1)==DisplayMode.Tray,"both display modes parse");
+        Check(Mode.Parse(2)==DisplayMode.Taskbar && Mode.Parse(-1)==DisplayMode.Taskbar,"out-of-range display mode falls back to taskbar");
         using(var sheet=new Bitmap(700,180)) using(var g=Graphics.FromImage(sheet)) {
             g.Clear(Color.FromArgb(42,42,42)); g.FillRectangle(Brushes.White,0,90,700,90);
             int[] levels={-1,0,9,10,11,20,21,95,100};
