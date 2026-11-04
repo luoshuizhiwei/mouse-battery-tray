@@ -55,6 +55,18 @@ v4.2.0 于 11-02/11-03 凌晨两次隔夜崩溃（0xC0000374），推翻此前"�
 4. pickerValue 蓝底蓝字 → Text 色透明底。
 UIA 实测 150% DPI 下窗口 846×826px（=564×550 DIP），按钮完整。教训：**自绘父控件+子 Label 必须显式 Transparent；manager.Scale 只缩 bounds 不缩 OnPaint 坐标系**。
 
+## v4.3.0 方案 A 阶段交付（2026-11-04，按外部评审修订）
+
+系统更新 KB5127936/KB5132402 改 taskbar.dll 指纹为 `A52F99F7…`，触发强制降级。依据 `docs/proposals/dual-mode-display-review.md` 完成方案 A 稳定闭环：
+
+- **S1** `src/DisplayMode.cs`：DisplayMode 枚举 + Mode.Parse/Load/Save（持久化 `HKCU\Software\MouseBatteryTray\DisplayMode`）+ 4 项单测。52 逻辑 + 15 IPC 全过。
+- **S2-A** 三量模型 `preferredMode`/`taskbarUnavailable`/`ActiveMode`；冷启动按配置分流（Tray 模式零指纹依赖）；**取消跨进程热切换**，模式切换改为 Save + `--restart` 平滑自我重启。
+- **S3** 单一 NotifyIcon 实例（进程内只创建一次，只切 Visible）；提升改由自身 `TrayPromotedOnce` 标记一次性执行（修掉"IsPromoted=0 判缺失失效"与"反复写系统树踩堆"）；诊断串区分主动托盘与强制降级。
+- **S4** 原生 RadioButton 模式卡（不自绘）；96-DPI 标量动态高度（防 uiScale²）；**置灰 Taskbar 选项绝不反写 preferredMode**；禁用项显示指纹提示。
+- 验证：三轮模式切换全部存活；强制降级时偏好保持 Taskbar、ActiveMode=Tray、ModeUnavailable=True；用户选 Tray 时 ModeUnavailable=False；UIA 树完整、窗口 895px@150% 无按钮裁切；单路径记账恰好 0/1 条。
+- **边界**：AppearanceProbe 8 项**待 S5**——当前指纹未适配，Probe 构造 NativeHost 会抛 NotSupportedException，属预期；S5 通过后重跑。
+- EXE `AA4D9EE1…7A7C1`；Git `5492525`。**S5（PDB 符号 + SSOT 收敛 Native + G1 闸门）独立分闸，本轮未启动。**
+
 ## v3.7 → v3.8.3 演进摘要（详见 git log）
 
 - **v3.7.0 双鼠标支持**：PRO X 2 DEX + M750L，任务栏自动跟随当前在用的（Raw Input），悬停卡列全两只。
