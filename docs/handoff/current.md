@@ -82,6 +82,18 @@ UIA 实测 150% DPI 下窗口 846×826px（=564×550 DIP），按钮完整。教
 
 下一步选项：① 攻克注入失败（对抗 24H2 安全强化，每次更新重打）；② 采纳评审"第三条路"——纯用户态 Fluent 托盘（零注入、免疫更新），把托盘模式打磨到接近内嵌观感。托盘已是当前生效形态。
 
+## S5 注入诊断收官（2026-11-05 凌晨）：适配确认成功，"hidden"=设备休眠正常行为
+
+给 `NativeAttach` 全链 10 步加诊断（`datattach-diag.txt`）+ 原生 `Read()` 逐条件诊断（`ReadDiag` 写入 layout）。真机读数**颠覆了此前的假设链**：
+
+- **注入全步骤 err=0**：OpenProcess ✓ → VirtualAllocEx ✓ → WriteMemory ✓ → CreateRemoteThread ✓ → **LoadLibraryW 在 Explorer 内成功（HMODULE!=0）** → 模块确认 ✓ → NativeStart 返回 0。
+- **此前"Explorer 模块表无我们 DLL"的判断是误报**（PowerShell Modules 枚举的权限/时机局限）。
+- **profile 通过**（Native=initialized），`ReadDiag=pass`——**所有校验通过，渲染链路活着**。
+- **`hidden` seq=138→542 持续增长、percent=0、tick=0**：凌晨两只鼠标休眠（GPW4 接收器无应答、M750L 蓝牙断链）→ Poll 空 → 无有效读数 → **按设计 15 秒隐藏**。`lastSuccessTick=0`（本进程从未成功）→ 写 tick=0 → 原生 tickAge=系统 uptime。
+- **此前误判链澄清**：①"注入层被 CIG 阻断"不成立；②"Explorer 读到 4h 前冻结数据"不成立（ReadDiag 未加时 layout 被 Read 成功覆盖前的旧值干扰）；③"崩溃观察关闭"维持有效。
+
+**最终验收待明早**：用户动鼠标 → 任务栏出现 `PRO X 2 DEX 8x%` 胶囊 → **适配正式完成**。诊断代码保留（attach-diag.txt/ReadDiag 失败分支），它们只在异常时产生内容。
+
 ## v3.7 → v3.8.3 演进摘要（详见 git log）
 
 - **v3.7.0 双鼠标支持**：PRO X 2 DEX + M750L，任务栏自动跟随当前在用的（Raw Input），悬停卡列全两只。

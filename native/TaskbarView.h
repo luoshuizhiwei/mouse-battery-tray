@@ -333,7 +333,14 @@ uint64_t Signature(Snapshot const& s,bool light) {
 
 struct Work { Snapshot snapshot{}; bool remove=false, ran=false; std::wstring health; };
 void Update(Work& work) {
-    if(work.remove || work.snapshot.state==0) {Remove();work.health=L"hidden";return;}
+    if(work.remove || work.snapshot.state==0) {
+        wchar_t buf[192];
+        _snwprintf_s(buf,192,_TRUNCATE,L"hidden seq=%u magic=%08X state=%d percent=%d tickAge=%lld ms",
+            work.snapshot.sequence,work.snapshot.magic,work.snapshot.state,work.snapshot.percent,
+            (long long)(GetTickCount64()-work.snapshot.tick));
+        work.health=buf;
+        Remove();return;
+    }
     auto& s=work.snapshot;
     auto root=TaskbarRoot(TaskbarWindow());
     if(!root) {NativeLog(L"Taskbar XamlRoot not ready");work.health=L"XamlRoot unavailable";return;}
@@ -494,10 +501,16 @@ Snapshot Read() {
         if(!g_data) {NativeLog(L"MapViewOfFile failed: %lu",GetLastError());CloseHandle(g_mapping);g_mapping=nullptr;return result;}
     }
     uint32_t before=((Snapshot volatile const*)g_data)->sequence;
-    if(before&1) return result;
+    if(before&1) {SetHealth(L"ReadDiag",L"writer active (odd seq)");return result;}
     MemoryBarrier(); std::memcpy(&result,g_data,sizeof(result)); MemoryBarrier();
     uint32_t after=((Snapshot volatile const*)g_data)->sequence;
-    if(before!=after || result.magic!=0x3254424D || result.percent<0 || result.percent>100 || result.state<0 || result.state>2 || result.position<0 || result.position>3 || GetTickCount64()-result.tick>=15000) result.state=0;
+    if(before!=after) {SetHealth(L"ReadDiag",L"torn read (seq changed)");return result;}
+    if(result.magic!=0x3254424D) {SetHealth(L"ReadDiag",(L"bad magic 0x"+std::to_wstring(result.magic)).c_str());return result;}
+    if(GetTickCount64()-result.tick>=15000) {SetHealth(L"ReadDiag",(L"stale tick age "+std::to_wstring(GetTickCount64()-result.tick)+L"ms").c_str());return result;}
+    if(result.percent<0||result.percent>100) {SetHealth(L"ReadDiag",(L"bad percent "+std::to_wstring(result.percent)).c_str());return result;}
+    if(result.state<0||result.state>2) {SetHealth(L"ReadDiag",(L"bad state "+std::to_wstring(result.state)).c_str());return result;}
+    if(result.position<0||result.position>3) {SetHealth(L"ReadDiag",(L"bad position "+std::to_wstring(result.position)).c_str());return result;}
+    // pass: stay silent, layout keeps Update health
     result.tooltip[215]=0;
     if(result.themeOverride<0 || result.themeOverride>2) result.themeOverride=0;
     return result;
