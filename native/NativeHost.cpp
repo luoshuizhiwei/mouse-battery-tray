@@ -52,19 +52,27 @@ void SetHealth(wchar_t const* key,wchar_t const* value) {
 #include "TaskbarView.h"
 
 namespace {
-// Exact local taskbar.dll profile. The EXE additionally verifies the SHA-256
-// before attaching. No network symbol lookup or external engine is involved.
+// Exact local taskbar.dll profiles (SSOT). The EXE no longer verifies the
+// SHA-256 itself: NativeProbe exposes the supported set and the current
+// fingerprint to managed code. Profile rows keyed by PE TimeDateStamp.
+//  - 1989904251: 26100.9711 (pre-KB5127936)
+//  - 1635664427: 26100.9818 (post-KB5127936/KB5132402, 2026-11-04)
+// RVAs located via MS public PDB (taskbar.pdb 8645A6F8C08FC8A18DACD4B77CF1E2EE1):
+//   FrameHeight = TaskbarHost::FrameHeight @ 0xB10A4 (element offset 0x10)
+//   Decref      = std::_Ref_count_base::_Decref    @ 0x290B0
+//   GetHost     = TaskListWnd::GetHost             @ 0xF9C40
+//   siteVtable  = TaskListWnd site vftable         @ 0x1CFA30 (thunk imm 0x40/0x50/0x50)
 bool InitializeProfile() {
     auto base=(BYTE*)LoadLibraryExW(L"taskbar.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
     if(!base) {SetHealth(L"InitState",L"taskbar.dll unavailable");return false;}
     auto dos=(IMAGE_DOS_HEADER*)base;
     auto nt=(IMAGE_NT_HEADERS64*)(base+dos->e_lfanew);
-    bool match=nt->FileHeader.TimeDateStamp==1989904251 && nt->OptionalHeader.SizeOfImage==3178496 && nt->OptionalHeader.CheckSum==3228343;
+    bool match=nt->FileHeader.TimeDateStamp==1635664427 && nt->OptionalHeader.SizeOfImage==3252224 && nt->OptionalHeader.CheckSum==3342558;
     if(!match) {FreeLibrary((HMODULE)base);SetHealth(L"InitState",L"unsupported taskbar.dll profile");return false;}
-    g_siteVtable=base+1896648;
-    g_getHost=(GetHostFn)(base+1094976);
-    g_frameHeight=(FrameHeightFn)(base+565532);
-    g_decref=(DecrefFn)(base+162720);
+    g_siteVtable=base+1899056;
+    g_getHost=(GetHostFn)(base+1023040);
+    g_frameHeight=(FrameHeightFn)(base+725156);
+    g_decref=(DecrefFn)(base+168112);
     auto code=(BYTE const*)g_frameHeight;
     if(code[0]!=0x48 || code[1]!=0x83 || code[2]!=0xEC || code[4]!=0x48 || code[5]!=0x83 || code[6]!=0xC1 || code[7]>0x7F) {
         FreeLibrary((HMODULE)base);SetHealth(L"InitState",L"unsupported FrameHeight prologue");return false;
@@ -142,6 +150,28 @@ HMODULE RemoteModule(DWORD pid,std::wstring const& value,bool fullPath) {
     while(Module32NextW(snapshot.get(),&module));
     return nullptr;
 }
+}
+// Single source of truth for taskbar.dll compatibility. Managed code asks
+// this instead of keeping its own hash table; fills fingerprint (hex, no
+// dashes) for the tray-fallback message when unsupported.
+extern "C" __declspec(dllexport) DWORD WINAPI NativeProbeTaskbar(wchar_t* fingerprintBuffer,DWORD bufferChars) {
+    BYTE probeBase=0;
+    auto base=(BYTE*)LoadLibraryExW(L"taskbar.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if(!base) return ERROR_NOT_SUPPORTED;
+    auto dos=(IMAGE_DOS_HEADER*)base;
+    auto nt=(IMAGE_NT_HEADERS64*)(base+dos->e_lfanew);
+    DWORD stamp=nt->FileHeader.TimeDateStamp;
+    DWORD image=nt->OptionalHeader.SizeOfImage;
+    DWORD check=nt->OptionalHeader.CheckSum;
+    FreeLibrary((HMODULE)base);
+    bool match=(stamp==1635664427 && image==3252224 && check==3342558);
+    if(match && !InitializeProfile()) match=false; // RVAs/prologue must also agree
+    if(match) return ERROR_SUCCESS;
+    if(fingerprintBuffer && bufferChars>=8) {
+        // return the PE timestamp-derived short fingerprint (stable per build)
+        _snwprintf_s(fingerprintBuffer,bufferChars,_TRUNCATE,L"%08X-%08X-%08X",stamp,image,check);
+    }
+    return ERROR_NOT_SUPPORTED;
 }
 extern "C" __declspec(dllexport) DWORD WINAPI NativeStart(void* parameter) {
     DWORD owner=(DWORD)(uintptr_t)parameter;

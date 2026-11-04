@@ -67,6 +67,21 @@ UIA 实测 150% DPI 下窗口 846×826px（=564×550 DIP），按钮完整。教
 - **边界**：AppearanceProbe 8 项**待 S5**——当前指纹未适配，Probe 构造 NativeHost 会抛 NotSupportedException，属预期；S5 通过后重跑。
 - EXE `AA4D9EE1…7A7C1`；Git `5492525`。**S5（PDB 符号 + SSOT 收敛 Native + G1 闸门）独立分闸，本轮未启动。**
 
+## S5 适配轮结果（2026-11-04/05）：profile 4/4 通过 G1，但注入层被新系统阻断
+
+系统更新（KB5127936/KB5132402 → taskbar.dll 10.0.26100.9818）触发的适配按评审 Q4 走 **MS 公共符号服务器**路线，全程确定性定位：
+
+- 新 taskbar.dll 的 PDB（`8645A6F8C08FC8A18DACD4B77CF1E2EE1`）已从 msdl 下载（7.5MB，`evidence/pdb/`）。
+- `tools/sym-locate.ps1`（dbghelp SymFromAddr + 特征模式）：`frameHeight`=0xB10A4（PDB 符号 `TaskbarHost::FrameHeight`，elementOffset 仍 0x10）、`decref`=0x290B0（`std::_Ref_count_base::_Decref`）。
+- `tools/sym-enum.ps1`（SymEnumSymbols 全量 25149 符号导出）：`getHost`=0xF9C40（`TaskListWnd::GetHost`）。
+- `tools/vtable-locate.ps1` + thunk-immediate 指纹（0x40/0x50/0x50）：`siteVtable`=0x1CFA30（唯一命中，与旧版 .rdata 位置漂移仅 0x968 字节）。
+- **G1 断言 4/4 通过**。profile 已写入 `native/NativeHost.cpp`（SSOT：PE 三元组+4 RVA 均在 Native）；托管侧 `NativeHost.cs` 删除全部指纹常量，改调原生新导出 `NativeProbeTaskbar`（ProbeTaskbar 探测→返回指纹串，C# 仅透传提示）——**SSOT 收敛完成**。
+- 交付途中修复：`TryPromoteTrayIcon` 在 Icon 未赋值时反复写系统托盘树导致 `0xC0000374`（Tray 冷启动崩溃根因，改自身 `TrayPromotedOnce` 标记一次性后解决）；诊断串按 preferred/active 分列。
+
+**残余阻塞（新发现，诚实登记）**：新 profile 使 `InitializeProfile` 通过（Native=initialized），但 **Explorer 进程模块表里没有我们的 DLL**——`NativeAttach` 的跨进程 `LoadLibraryW` 注入在新系统静默失败（疑似 24H2+ CIG/签名强化；EXE 端 probe 误把自身写入的 health "initialized" 当成 Explorer 端成功，掩盖了失败）。任务栏内嵌未真正渲染。**托盘模式按预期兜底，一切功能可用**。
+
+下一步选项：① 攻克注入失败（对抗 24H2 安全强化，每次更新重打）；② 采纳评审"第三条路"——纯用户态 Fluent 托盘（零注入、免疫更新），把托盘模式打磨到接近内嵌观感。托盘已是当前生效形态。
+
 ## v3.7 → v3.8.3 演进摘要（详见 git log）
 
 - **v3.7.0 双鼠标支持**：PRO X 2 DEX + M750L，任务栏自动跟随当前在用的（Raw Input），悬停卡列全两只。
