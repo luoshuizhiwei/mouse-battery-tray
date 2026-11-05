@@ -7,7 +7,7 @@
 #include <tlhelp32.h>
 
 namespace {
-constexpr wchar_t HealthName[]=L"Local\\MouseBatteryTaskbar.NativeHealth.v3";
+constexpr wchar_t HealthName[]=L"Local\\MouseBatteryTaskbar.NativeHealth.v4";
 struct Health {
     uint32_t magic; volatile LONG sequence; uint32_t state,owner;
     uint64_t tick;
@@ -62,27 +62,7 @@ namespace {
 //   Decref      = std::_Ref_count_base::_Decref    @ 0x290B0
 //   GetHost     = TaskListWnd::GetHost             @ 0xF9C40
 //   siteVtable  = TaskListWnd site vftable         @ 0x1CFA30 (thunk imm 0x40/0x50/0x50)
-bool InitializeProfile() {
-    auto base=(BYTE*)LoadLibraryExW(L"taskbar.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if(!base) {SetHealth(L"InitState",L"taskbar.dll unavailable");return false;}
-    auto dos=(IMAGE_DOS_HEADER*)base;
-    auto nt=(IMAGE_NT_HEADERS64*)(base+dos->e_lfanew);
-    bool match=nt->FileHeader.TimeDateStamp==1635664427 && nt->OptionalHeader.SizeOfImage==3252224 && nt->OptionalHeader.CheckSum==3342558;
-    if(!match) {FreeLibrary((HMODULE)base);SetHealth(L"InitState",L"unsupported taskbar.dll profile");return false;}
-    g_siteVtable=base+1899056;
-    g_getHost=(GetHostFn)(base+1023040);
-    g_frameHeight=(FrameHeightFn)(base+725156);
-    g_decref=(DecrefFn)(base+168112);
-    auto code=(BYTE const*)g_frameHeight;
-    if(code[0]!=0x48 || code[1]!=0x83 || code[2]!=0xEC || code[4]!=0x48 || code[5]!=0x83 || code[6]!=0xC1 || code[7]>0x7F) {
-        FreeLibrary((HMODULE)base);SetHealth(L"InitState",L"unsupported FrameHeight prologue");return false;
-    }
-    g_elementOffset=code[7];
-    // taskbar.dll is already held by Explorer. Balance our lookup reference.
-    FreeLibrary((HMODULE)base);
-    return true;
-}
-
+bool InitializeProfile(); // defined below with the profile table
 DWORD WINAPI NativeWorker(void* parameter) {
     HMODULE self=(HMODULE)parameter;
     HANDLE waits[]={g_stop,g_ownerProcess};
@@ -139,19 +119,37 @@ void StartInsideExplorer(DWORD owner) {
 
 
 
-HMODULE RemoteModule(DWORD pid,std::wstring const& value,bool fullPath) {
-    winrt::handle snapshot{CreateToolhelp32Snapshot(TH32CS_SNAPMODULE|TH32CS_SNAPMODULE32,pid)};
-    if(snapshot.get()==INVALID_HANDLE_VALUE) return nullptr;
-    MODULEENTRY32W module{sizeof(module)};
-    if(!Module32FirstW(snapshot.get(),&module)) return nullptr;
-    do {if(_wcsicmp(fullPath ? module.szExePath : module.szModule,value.c_str())==0) return module.hModule;}
-    while(Module32NextW(snapshot.get(),&module));
-    return nullptr;
+
+// Pure profile check: NO health writes, NO global side effects. Safe to call
+// from the EXE-side probe and from the Explorer-side initializer alike.
+bool CheckProfile(bool apply,DWORD* stampOut,DWORD* imageOut,DWORD* checkOut) {
+    auto base=(BYTE*)LoadLibraryExW(L"taskbar.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if(!base) return false;
+    auto dos=(IMAGE_DOS_HEADER*)base;
+    auto nt=(IMAGE_NT_HEADERS64*)(base+dos->e_lfanew);
+    DWORD stamp=nt->FileHeader.TimeDateStamp,image=nt->OptionalHeader.SizeOfImage,check=nt->OptionalHeader.CheckSum;
+    bool match=(stamp==1635664427 && image==3252224 && check==3342558);
+    if(match && apply) {
+        g_siteVtable=base+1899056;
+        g_getHost=(GetHostFn)(base+1023040);
+        g_frameHeight=(FrameHeightFn)(base+725156);
+        g_decref=(DecrefFn)(base+168112);
+        auto code=(BYTE const*)g_frameHeight;
+        if(code[0]!=0x48 || code[1]!=0x83 || code[2]!=0xEC || code[4]!=0x48 || code[5]!=0x83 || code[6]!=0xC1 || code[7]>0x7F) match=false;
+        else g_elementOffset=code[7];
+    }
+    FreeLibrary((HMODULE)base);
+    if(stampOut)*stampOut=stamp;
+    if(imageOut)*imageOut=image;
+    if(checkOut)*checkOut=check;
+    return match;
 }
+bool InitializeProfile() {
+    bool ok=CheckProfile(true,nullptr,nullptr,nullptr);
+    if(!ok) SetHealth(L"InitState",L"unsupported taskbar.dll profile");
+    return ok;
 }
-// Single source of truth for taskbar.dll compatibility. Managed code asks
-// this instead of keeping its own hash table; fills fingerprint (hex, no
-// dashes) for the tray-fallback message when unsupported.
+
 extern "C" __declspec(dllexport) DWORD WINAPI NativeProbeTaskbar(wchar_t* fingerprintBuffer,DWORD bufferChars) {
     BYTE probeBase=0;
     auto base=(BYTE*)LoadLibraryExW(L"taskbar.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -163,7 +161,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI NativeProbeTaskbar(wchar_t* finger
     DWORD check=nt->OptionalHeader.CheckSum;
     FreeLibrary((HMODULE)base);
     bool match=(stamp==1635664427 && image==3252224 && check==3342558);
-    if(match && !InitializeProfile()) match=false; // RVAs/prologue must also agree
+    if(match && !CheckProfile(false,nullptr,nullptr,nullptr)) match=false; // RVAs/prologue must also agree
     if(match) return ERROR_SUCCESS;
     if(fingerprintBuffer && bufferChars>=8) {
         // return the PE timestamp-derived short fingerprint (stable per build)
@@ -188,10 +186,22 @@ extern "C" __declspec(dllexport) DWORD WINAPI NativeStart(void* parameter) {
         StartInsideExplorer(owner);
         if(!g_started) result=ERROR_DLL_INIT_FAILED;
     }
-    // Balance LoadLibrary's reference. The worker owns a separate reference,
-    // and this entry thread retains its own until FreeLibraryAndExitThread.
-    FreeLibrary(g_instance);
+    // DO NOT FreeLibrary(g_instance) here: the injected LoadLibraryW reference
+    // is the one keeping this module mapped while NativeWorker runs. Dropping
+    // it races the worker and can unload the DLL out from under it (module
+    // vanishes from Explorer, heap corruption on next dispatch). The worker's
+    // own GetModuleHandleEx reference is released by FreeLibraryAndExitThread.
     FreeLibraryAndExitThread(self,result);
+}
+HMODULE RemoteModule(DWORD pid,std::wstring const& value,bool fullPath) {
+    winrt::handle snapshot{CreateToolhelp32Snapshot(TH32CS_SNAPMODULE|TH32CS_SNAPMODULE32,pid)};
+    if(snapshot.get()==INVALID_HANDLE_VALUE) return nullptr;
+    MODULEENTRY32W module{sizeof(module)};
+    if(!Module32FirstW(snapshot.get(),&module)) return nullptr;
+    do {if(_wcsicmp(fullPath ? module.szExePath : module.szModule,value.c_str())==0) return module.hModule;}
+    while(Module32NextW(snapshot.get(),&module));
+    return nullptr;
+}
 }
 extern "C" __declspec(dllexport) DWORD WINAPI NativeAttach(DWORD owner) {
     
