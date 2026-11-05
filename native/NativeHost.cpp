@@ -98,8 +98,6 @@ DWORD WINAPI NativeWorker(void* parameter) {
     }
     {
         std::lock_guard lock(g_lifecycle);
-        if(g_data) {UnmapViewOfFile(g_data);g_data=nullptr;}
-        if(g_mapping) {CloseHandle(g_mapping);g_mapping=nullptr;}
         CloseHandle(g_stop);g_stop=nullptr;
         CloseHandle(g_ownerProcess);g_ownerProcess=nullptr;
         SetHealth(L"LastLayout",L"hidden");SetHealth(L"InitState",L"stopped");
@@ -195,82 +193,60 @@ extern "C" __declspec(dllexport) DWORD WINAPI NativeStart(void* parameter) {
     FreeLibrary(g_instance);
     FreeLibraryAndExitThread(self,result);
 }
-// Attach diagnostics: one line per step with Win32 error, written next to the
-// EXE (NativeAttach runs in the EXE process, not in Explorer). The tray
-// fallback masks the real failure point, so this file is the only truth.
-static void AttachDiag(const char* step,DWORD error,const wchar_t* detail=nullptr) {
-    wchar_t exe[MAX_PATH];GetModuleFileNameW(nullptr,exe,MAX_PATH);
-    std::wstring path(exe);
-    size_t cut=path.find_last_of(L'\\');
-    std::wstring dir=cut==std::wstring::npos?L".":path.substr(0,cut);
-    std::wstring file=dir+L"\\data\\attach-diag.txt";
-    CreateDirectoryW((dir+L"\\data").c_str(),nullptr);
-    HANDLE f=CreateFileW(file.c_str(),FILE_APPEND_DATA,FILE_SHARE_READ,nullptr,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
-    if(f==INVALID_HANDLE_VALUE) return;
-    LARGE_INTEGER zero{};SetFilePointer(f,0,nullptr,FILE_END);
-    char line[512];
-    int n=_snprintf_s(line,sizeof(line),_TRUNCATE,"[%llu] %s err=%lu",(unsigned long long)GetTickCount64(),step,error);
-    if(detail) {int m=_snprintf_s(line+n,sizeof(line)-n,_TRUNCATE," | %ls",detail);if(m>0)n+=m;}
-    line[n<0?0:n]=0;
-    static const char CRLF[2]={'\r','\n'};
-    DWORD wrote=0;WriteFile(f,line,(DWORD)strlen(line),&wrote,nullptr);
-    WriteFile(f,CRLF,2,&wrote,nullptr);
-    CloseHandle(f);
-}
 extern "C" __declspec(dllexport) DWORD WINAPI NativeAttach(DWORD owner) {
-    AttachDiag("step:enter",0);
+    
     HWND taskbar=FindWindowW(L"Shell_TrayWnd",nullptr);DWORD pid=0;
-    if(!taskbar) {AttachDiag("step:find-taskbar",ERROR_NOT_FOUND);return ERROR_NOT_FOUND;}GetWindowThreadProcessId(taskbar,&pid);
-    AttachDiag("step:taskbar-found",0);
-    wchar_t path[32768];if(!GetModuleFileNameW(g_instance,path,ARRAYSIZE(path))) {DWORD e=GetLastError();AttachDiag("step:get-self-path",e);return e;}
-    AttachDiag("step:self-path",0,path);
+    if(!taskbar) {return ERROR_NOT_FOUND;}GetWindowThreadProcessId(taskbar,&pid);
+    
+    wchar_t path[32768];if(!GetModuleFileNameW(g_instance,path,ARRAYSIZE(path))) {DWORD e=GetLastError();return e;}
+    
     winrt::handle process{OpenProcess(PROCESS_CREATE_THREAD|PROCESS_QUERY_INFORMATION|PROCESS_VM_OPERATION|PROCESS_VM_READ|PROCESS_VM_WRITE,FALSE,pid)};
-    if(!process) {DWORD e=GetLastError();AttachDiag("step:open-explorer",e);return e;}
-    AttachDiag("step:open-explorer",0);
+    if(!process) {DWORD e=GetLastError();return e;}
+    
     HMODULE kernel=GetModuleHandleW(L"kernel32.dll"), loaderOwner=nullptr;
     auto loader=GetProcAddress(kernel,"LoadLibraryW");
     if(!loader || !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,(PCWSTR)loader,&loaderOwner)) return GetLastError();
     wchar_t ownerPath[MAX_PATH];if(!GetModuleFileNameW(loaderOwner,ownerPath,ARRAYSIZE(ownerPath))) return GetLastError();
     std::wstring ownerName(ownerPath);ownerName=ownerName.substr(ownerName.find_last_of(L'\\')+1);
     HMODULE remoteLoaderOwner=RemoteModule(pid,ownerName,false);
-    if(!remoteLoaderOwner) {AttachDiag("step:find-kernel32-in-explorer",ERROR_MOD_NOT_FOUND);return ERROR_MOD_NOT_FOUND;}
-    AttachDiag("step:find-kernel32-in-explorer",0);
+    if(!remoteLoaderOwner) {return ERROR_MOD_NOT_FOUND;}
+    
     auto remoteLoader=(LPTHREAD_START_ROUTINE)((BYTE*)remoteLoaderOwner+((BYTE*)loader-(BYTE*)loaderOwner));
     SIZE_T bytes=(wcslen(path)+1)*sizeof(wchar_t);
     void* argument=VirtualAllocEx(process.get(),nullptr,bytes,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
-    if(!argument) {DWORD e=GetLastError();AttachDiag("step:virtualalloc",e);return e;}
-    AttachDiag("step:virtualalloc",0);
+    if(!argument) {DWORD e=GetLastError();return e;}
+    
     SIZE_T written=0;
     if(!WriteProcessMemory(process.get(),argument,path,bytes,&written) || written!=bytes) {
-        DWORD e=GetLastError();AttachDiag("step:write-memory",e);VirtualFreeEx(process.get(),argument,0,MEM_RELEASE);return e ? e : ERROR_WRITE_FAULT;
+        DWORD e=GetLastError();VirtualFreeEx(process.get(),argument,0,MEM_RELEASE);return e ? e : ERROR_WRITE_FAULT;
     }
-    AttachDiag("step:write-memory",0);
+    
     winrt::handle loadThread{CreateRemoteThread(process.get(),nullptr,0,remoteLoader,argument,0,nullptr)};
-    if(!loadThread) {DWORD e=GetLastError();AttachDiag("step:create-remote-thread",e);VirtualFreeEx(process.get(),argument,0,MEM_RELEASE);return e;}
-    AttachDiag("step:create-remote-thread",0);
+    if(!loadThread) {DWORD e=GetLastError();VirtualFreeEx(process.get(),argument,0,MEM_RELEASE);return e;}
+    
     DWORD wait=WaitForSingleObject(loadThread.get(),10000);
     if(wait!=WAIT_OBJECT_0) {
         // Never free a path buffer that a pending loader may still be using.
-        AttachDiag("step:loader-wait",wait==WAIT_TIMEOUT?ERROR_TIMEOUT:GetLastError());
+        
         SetHealth(L"LastLayout",L"native loader pending; argument buffer retained");
         return wait==WAIT_TIMEOUT ? ERROR_TIMEOUT : GetLastError();
     }
     VirtualFreeEx(process.get(),argument,0,MEM_RELEASE);
-    DWORD loaded=0;if(!GetExitCodeThread(loadThread.get(),&loaded)) {DWORD e=GetLastError();AttachDiag("step:loader-exit-code",e);return e;}
-    AttachDiag("step:loader-exit-code",0,loaded?L"HMODULE!=0":L"HMODULE==0 (LoadLibraryW failed inside Explorer)");
+    DWORD loaded=0;if(!GetExitCodeThread(loadThread.get(),&loaded)) {DWORD e=GetLastError();return e;}
+    
     if(!loaded) {SetHealth(L"LastLayout",(L"LoadLibraryW returned zero; path="+std::wstring(path)+L" loader="+ownerName).c_str());return ERROR_DLL_INIT_FAILED;}
     HMODULE remote=RemoteModule(pid,path,true);
-    if(!remote) {AttachDiag("step:confirm-module-in-explorer",ERROR_MOD_NOT_FOUND,path);return ERROR_MOD_NOT_FOUND;}
-    AttachDiag("step:confirm-module-in-explorer",0);
+    if(!remote) {return ERROR_MOD_NOT_FOUND;}
+    
     auto localStart=GetProcAddress(g_instance,"NativeStart");
     if(!localStart) return GetLastError();
     auto remoteStart=(LPTHREAD_START_ROUTINE)((BYTE*)remote+((BYTE*)localStart-(BYTE*)g_instance));
     winrt::handle startThread{CreateRemoteThread(process.get(),nullptr,0,remoteStart,(void*)(uintptr_t)owner,0,nullptr)};
-    if(!startThread) {DWORD e=GetLastError();AttachDiag("step:start-thread",e);return e;}
+    if(!startThread) {DWORD e=GetLastError();return e;}
     wait=WaitForSingleObject(startThread.get(),10000);
-    if(wait!=WAIT_OBJECT_0) {DWORD e=wait==WAIT_TIMEOUT?ERROR_TIMEOUT:GetLastError();AttachDiag("step:start-wait",e);return e;}
-    DWORD result=0;if(!GetExitCodeThread(startThread.get(),&result)) {DWORD e=GetLastError();AttachDiag("step:start-exit-code",e);return e;}
-    AttachDiag("step:native-start-exit",result);
+    if(wait!=WAIT_OBJECT_0) {DWORD e=wait==WAIT_TIMEOUT?ERROR_TIMEOUT:GetLastError();return e;}
+    DWORD result=0;if(!GetExitCodeThread(startThread.get(),&result)) {DWORD e=GetLastError();return e;}
+    
     return result;
 }
 extern "C" __declspec(dllexport) DWORD WINAPI NativeDetach() {

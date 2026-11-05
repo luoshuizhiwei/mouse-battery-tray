@@ -11,7 +11,6 @@ using System.Threading;
 
 namespace MouseBattery {
 internal sealed class NativeHost : IDisposable {
-    const string TaskbarSha256="CA1E335AC1FAE5FF57519035302A2F365C4620D3A230F31F1231AF7331760741";
     const string HealthMap=@"Local\MouseBatteryTaskbar.NativeHealth.v3";
     [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate uint AttachFunction(uint owner);
     [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate uint DetachFunction();
@@ -34,12 +33,23 @@ internal sealed class NativeHost : IDisposable {
     internal string Status="等待任务栏";
     internal uint StopResult;
 
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr GetProcAddressNumeric(IntPtr module,IntPtr ordinal);
+    // SSOT: the native component owns the taskbar profile table. We only ask it.
+    string ProbeTaskbarFingerprint() {
+        var buf=Marshal.AllocCoTaskMem(128);
+        try {
+            if(probe==null) return "探测函数缺失";
+            uint r=probe(buf,128);
+            if(r==0) return null; // supported
+            string fp=Marshal.PtrToStringUni(buf);
+            return string.IsNullOrEmpty(fp) ? "未知指纹" : fp;
+        } finally { Marshal.FreeCoTaskMem(buf); }
+    }
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate uint ProbeFunction(IntPtr fingerprintBuffer,uint bufferChars);
+    ProbeFunction probe;
+
     internal NativeHost() {
-        string taskbar=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"taskbar.dll");
-        using(var sha=SHA256.Create()) using(var file=File.OpenRead(taskbar)) {
-            string hash=BitConverter.ToString(sha.ComputeHash(file)).Replace("-","");
-            if(hash!=TaskbarSha256) throw new NotSupportedException("当前 Windows 任务栏版本尚未适配。程序未修改任务栏；请保留系统版本和此指纹以便适配："+hash);
-        }
+        // Extract and load our native component first: it owns the profile table.
         byte[] bytes;
         using(var resource=Assembly.GetExecutingAssembly().GetManifestResourceStream("MouseBattery.Native.dll"))
         using(var buffer=new MemoryStream()) {resource.CopyTo(buffer);bytes=buffer.ToArray();}
@@ -60,6 +70,11 @@ internal sealed class NativeHost : IDisposable {
         if(start==IntPtr.Zero || stop==IntPtr.Zero) {FreeLibrary(library);throw new EntryPointNotFoundException("Native component entry points unavailable");}
         attach=(AttachFunction)Marshal.GetDelegateForFunctionPointer(start,typeof(AttachFunction));
         detach=(DetachFunction)Marshal.GetDelegateForFunctionPointer(stop,typeof(DetachFunction));
+        IntPtr probePtr=GetProcAddress(library,"NativeProbeTaskbar");
+        probe=probePtr==IntPtr.Zero ? null : (ProbeFunction)Marshal.GetDelegateForFunctionPointer(probePtr,typeof(ProbeFunction));
+        // SSOT probe: native decides support; we only surface its fingerprint.
+        string fp=ProbeTaskbarFingerprint();
+        if(fp!=null) throw new NotSupportedException("当前 Windows 任务栏版本尚未适配。程序未修改任务栏；请保留系统版本和此指纹以便适配："+fp);
     }
 
     private uint ReadHealth(out uint owner) {

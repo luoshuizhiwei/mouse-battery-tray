@@ -39,8 +39,7 @@ struct Snapshot {
     int32_t pad[5];                       // 492..511, keeps sizeof at 512
 };
 static_assert(sizeof(Snapshot)==512);
-HANDLE g_stop=nullptr, g_mapping=nullptr;
-const Snapshot* g_data=nullptr;
+HANDLE g_stop=nullptr;
 std::wstring g_reader;
 std::atomic<UINT> g_message{0};
 using GetHostFn=void*(WINAPI*)(void*,void*);
@@ -334,11 +333,9 @@ uint64_t Signature(Snapshot const& s,bool light) {
 struct Work { Snapshot snapshot{}; bool remove=false, ran=false; std::wstring health; };
 void Update(Work& work) {
     if(work.remove || work.snapshot.state==0) {
-        wchar_t buf[192];
-        _snwprintf_s(buf,192,_TRUNCATE,L"hidden seq=%u magic=%08X state=%d percent=%d tickAge=%lld ms",
-            work.snapshot.sequence,work.snapshot.magic,work.snapshot.state,work.snapshot.percent,
-            (long long)(GetTickCount64()-work.snapshot.tick));
-        work.health=buf;
+        wchar_t b[128];
+        _snwprintf_s(b,128,_TRUNCATE,L"hidden st=%d pct=%d age=%llu",work.snapshot.state,work.snapshot.percent,(unsigned long long)(GetTickCount64()-work.snapshot.tick));
+        work.health=b;
         Remove();return;
     }
     auto& s=work.snapshot;
@@ -494,23 +491,20 @@ bool Dispatch(Work& work) {
 
 Snapshot Read() {
     Snapshot result{};
-    if(!g_data) {
-        g_mapping=OpenFileMappingW(FILE_MAP_READ,FALSE,L"Local\\MouseBatteryTaskbar.v2");
-        if(!g_mapping) return result;
-        g_data=(Snapshot const*)MapViewOfFile(g_mapping,FILE_MAP_READ,0,0,sizeof(Snapshot));
-        if(!g_data) {NativeLog(L"MapViewOfFile failed: %lu",GetLastError());CloseHandle(g_mapping);g_mapping=nullptr;return result;}
-    }
-    uint32_t before=((Snapshot volatile const*)g_data)->sequence;
-    if(before&1) {SetHealth(L"ReadDiag",L"writer active (odd seq)");return result;}
-    MemoryBarrier(); std::memcpy(&result,g_data,sizeof(result)); MemoryBarrier();
-    uint32_t after=((Snapshot volatile const*)g_data)->sequence;
-    if(before!=after) {SetHealth(L"ReadDiag",L"torn read (seq changed)");return result;}
-    if(result.magic!=0x3254424D) {SetHealth(L"ReadDiag",(L"bad magic 0x"+std::to_wstring(result.magic)).c_str());return result;}
-    if(GetTickCount64()-result.tick>=15000) {SetHealth(L"ReadDiag",(L"stale tick age "+std::to_wstring(GetTickCount64()-result.tick)+L"ms").c_str());return result;}
-    if(result.percent<0||result.percent>100) {SetHealth(L"ReadDiag",(L"bad percent "+std::to_wstring(result.percent)).c_str());return result;}
-    if(result.state<0||result.state>2) {SetHealth(L"ReadDiag",(L"bad state "+std::to_wstring(result.state)).c_str());return result;}
-    if(result.position<0||result.position>3) {SetHealth(L"ReadDiag",(L"bad position "+std::to_wstring(result.position)).c_str());return result;}
-    // pass: stay silent, layout keeps Update health
+    // Do NOT cache the mapping: after an app restart or Windows update the
+    // publisher may recreate the named object, and a cached view would keep
+    // reading a stale (hours-old) snapshot forever. Open/mapping/close each
+    // dispatch - cheap (500ms cadence) and always bound to the live object.
+    HANDLE map=OpenFileMappingW(FILE_MAP_READ,FALSE,L"Local\\MouseBatteryTaskbar.v2");
+    if(!map) return result;
+    auto data=(Snapshot const*)MapViewOfFile(map,FILE_MAP_READ,0,0,sizeof(Snapshot));
+    if(!data) {CloseHandle(map);return result;}
+    uint32_t before=((Snapshot volatile const*)data)->sequence;
+    if(before&1) {UnmapViewOfFile(data);CloseHandle(map);return result;}
+    MemoryBarrier(); std::memcpy(&result,data,sizeof(result)); MemoryBarrier();
+    uint32_t after=((Snapshot volatile const*)data)->sequence;
+    UnmapViewOfFile(data);CloseHandle(map);
+    if(before!=after || result.magic!=0x3254424D || result.percent<0 || result.percent>100 || result.state<0 || result.state>2 || result.position<0 || result.position>3 || GetTickCount64()-result.tick>=15000) result.state=0;
     result.tooltip[215]=0;
     if(result.themeOverride<0 || result.themeOverride>2) result.themeOverride=0;
     return result;
