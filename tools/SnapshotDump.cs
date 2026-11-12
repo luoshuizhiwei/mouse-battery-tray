@@ -5,7 +5,7 @@ namespace MouseBattery {
 static class SnapshotDump {
     static int Main() {
         try {
-            using(var m=MemoryMappedFile.OpenExisting(@"Local\MouseBatteryTaskbar.v4",MemoryMappedFileRights.Read))
+            using(var m=MemoryMappedFile.OpenExisting(@"Local\MouseBatteryTaskbar.v2",MemoryMappedFileRights.Read))
             using(var v=m.CreateViewAccessor(0,512,MemoryMappedFileAccess.Read)) {
                 byte[] d=new byte[512];
                 v.ReadArray(0,d,0,512);

@@ -1,4 +1,4 @@
-param([string]$OutputDirectory = 'E:\MouseBattery\robust-v3.2',[string]$NativeDll = 'E:\MouseBattery\appearance-v3\MB-UI-02-v1\MouseBattery.Native.dll')
+param([string]$OutputDirectory = 'E:\Agent任务\进行中\MouseBattery\robust-v3.2',[Parameter(Mandatory=$true)][string]$NativeDll)
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'

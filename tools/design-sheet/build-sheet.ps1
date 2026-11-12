@@ -1,6 +1,6 @@
 param(
-  [string]$OutputDirectory = 'E:\MouseBattery\design-sheet\bin',
-  [string]$NativeDll = 'E:\MouseBattery\app\components\B84D3691A3EEDD9EB8111DB782845F08D313809A3ACE851E628D24EEF6BD99A8\MouseBattery.Native.dll',
+  [string]$OutputDirectory = 'E:\Agent任务\进行中\MouseBattery\design-sheet\bin',
+  [string]$NativeDll = 'E:\Agent任务\进行中\MouseBattery\app\components\B84D3691A3EEDD9EB8111DB782845F08D313809A3ACE851E628D24EEF6BD99A8\MouseBattery.Native.dll',
   [string]$ExpectedNativeSha256 = 'B84D3691A3EEDD9EB8111DB782845F08D313809A3ACE851E628D24EEF6BD99A8'
 )
 $ErrorActionPreference = 'Stop'

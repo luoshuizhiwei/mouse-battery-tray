@@ -2,7 +2,7 @@ param([string]$RunDir = '', [string[]]$Ids = @('T-01', 'T-07', 'T-02', 'T-08', '
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 if (-not $RunDir) {
-  $RunDir = (Get-ChildItem 'E:\MouseBattery\design-sheet' -Directory -Filter 'run-*' | Sort-Object Name -Descending | Select-Object -First 1).FullName
+  $RunDir = (Get-ChildItem 'E:\Agent任务\进行中\MouseBattery\design-sheet' -Directory -Filter 'run-*' | Sort-Object Name -Descending | Select-Object -First 1).FullName
 }
 $tsv = Join-Path $RunDir 'measurements.tsv'
 $lines = Get-Content -LiteralPath $tsv | Select-Object -Skip 1

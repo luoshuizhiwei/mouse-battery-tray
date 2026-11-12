@@ -1,4 +1,4 @@
-param([string]$DllPath = 'C:\Windows\System32\taskbar.dll', [string]$PdbDir = 'E:\MouseBattery\evidence\pdb', [string]$OutFile = 'E:\MouseBattery\evidence\pdb\taskbar-symbols.txt')
+param([string]$DllPath = 'C:\Windows\System32\taskbar.dll', [string]$PdbDir = 'E:\Agent任务\进行中\MouseBattery\evidence\pdb', [string]$OutFile = 'E:\Agent任务\进行中\MouseBattery\evidence\pdb\taskbar-symbols.txt')
 $ErrorActionPreference = 'Stop'
 
 Add-Type -TypeDefinition @'
@@ -43,7 +43,8 @@ public class DbgHelp3 {
         uint nameLen = (uint)Marshal.ReadInt32(symInfo, (int)Marshal.OffsetOf(typeof(SYMINFO_HEAD), "NameLen"));
         uint maxLen  = (uint)Marshal.ReadInt32(symInfo, (int)Marshal.OffsetOf(typeof(SYMINFO_HEAD), "MaxNameLen"));
         ulong addr   = (ulong)Marshal.ReadInt64(symInfo, (int)Marshal.OffsetOf(typeof(SYMINFO_HEAD), "Address"));
-        IntPtr namePtr = (IntPtr)((long)symInfo + Marshal.SizeOf(typeof(SYMINFO_HEAD)));
+        // SYMBOL_INFO.Name starts at 84; sizeof the padded header is 88.
+        IntPtr namePtr = (IntPtr)((long)symInfo + (int)Marshal.OffsetOf(typeof(SYMINFO_HEAD), "MaxNameLen") + 4);
         string name = Marshal.PtrToStringAnsi(namePtr, (int)nameLen);
         Symbols.Add(name + "|" + addr);
         return true;

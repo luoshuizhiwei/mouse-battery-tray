@@ -1,4 +1,4 @@
-param([string]$DllPath = 'C:\Windows\System32\taskbar.dll', [string]$PdbDir = 'E:\MouseBattery\evidence\pdb')
+param([string]$DllPath = 'C:\Windows\System32\taskbar.dll', [string]$PdbDir = 'E:\Agent任务\进行中\MouseBattery\evidence\pdb')
 $ErrorActionPreference = 'Stop'
 
 Add-Type -TypeDefinition @'
@@ -41,13 +41,13 @@ public class DbgHelp4 {
         IntPtr buf = Marshal.AllocHGlobal(total);
         try {
             var head = new SYMINFO_HEAD();
-            head.SizeOfStruct = (uint)total;
+            head.SizeOfStruct = (uint)Marshal.SizeOf(typeof(SYMINFO_HEAD));
             head.MaxNameLen = 700;
             Marshal.StructureToPtr(head, buf, false);
             ulong disp;
             if(!SymFromAddr(hProc, rva, out disp, buf)) return null;
-            IntPtr namePtr = (IntPtr)((long)buf + Marshal.SizeOf(typeof(SYMINFO_HEAD)));
-            return Marshal.PtrToStringAnsi(namePtr, (int)head.NameLen);
+            IntPtr namePtr = (IntPtr)((long)buf + (int)Marshal.OffsetOf(typeof(SYMINFO_HEAD), "MaxNameLen") + 4);
+            return Marshal.PtrToStringAnsi(namePtr);
         } finally { Marshal.FreeHGlobal(buf); }
     }
 }
@@ -115,11 +115,11 @@ for($off = $roff; $off -lt $roff + $rdvs - 48; $off += 8) {
 }
 Write-Output ('thunk-vtable candidates: ' + $candidates.Count)
 foreach($rva in $candidates) {
-    $sym = [DbgHelp4]::NameAt([uint64]$rva)
+    $sym = [DbgHelp4]::NameAt($base + [uint64]$rva)
     Write-Output ('vtable? rva=0x{0:X} sym={1}' -f $rva, $sym)
 }
 # Also verify known functions resolve
-foreach($rva in @(0xB10A4, 0x290B0, 0xF9C40)) {
-    Write-Output ('known rva=0x{0:X} sym={1}' -f $rva, [DbgHelp4]::NameAt([uint64]$rva))
+foreach($rva in @(0xB10A4, 0x290B0, 0x1237B0)) {
+    Write-Output ('known rva=0x{0:X} sym={1}' -f $rva, [DbgHelp4]::NameAt($base + [uint64]$rva))
 }
 [DbgHelp4]::SymCleanup([DbgHelp4]::hProc) | Out-Null

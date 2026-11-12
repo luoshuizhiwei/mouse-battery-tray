@@ -1,4 +1,4 @@
-param([string]$DllPath = 'C:\Windows\System32\taskbar.dll', [string]$PdbDir = 'E:\MouseBattery\evidence\pdb')
+param([string]$DllPath = 'C:\Windows\System32\taskbar.dll', [string]$PdbDir = 'E:\Agent任务\进行中\MouseBattery\evidence\pdb')
 $ErrorActionPreference = 'Stop'
 
 Add-Type -TypeDefinition @'
@@ -41,12 +41,13 @@ public class DbgHelp2 {
         IntPtr buf = Marshal.AllocHGlobal(total);
         try {
             var head = new SYMINFO_HEAD();
-            head.SizeOfStruct = (uint)total;
+            head.SizeOfStruct = (uint)Marshal.SizeOf(typeof(SYMINFO_HEAD));
             head.MaxNameLen = 512;
             Marshal.StructureToPtr(head, buf, false);
             ulong disp;
             if(!SymFromAddrBuf(hProc, baseAddr + rva, out disp, buf)) return null;
-            IntPtr namePtr = (IntPtr)((long)buf + Marshal.SizeOf(typeof(SYMINFO_HEAD)));
+            // SYMBOL_INFO.Name starts at 84, before the structure's tail padding.
+            IntPtr namePtr = (IntPtr)((long)buf + (int)Marshal.OffsetOf(typeof(SYMINFO_HEAD), "MaxNameLen") + 4);
             return Marshal.PtrToStringAnsi(namePtr);
         } finally { Marshal.FreeHGlobal(buf); }
     }

@@ -1,6 +1,6 @@
 param(
-  [string]$NativeDll = 'E:\MouseBattery\standalone\candidate\MouseBattery.Native.dll',
-  [string]$OutDir = 'E:\MouseBattery\robust-v3.2\degraded-probe-v420'
+  [string]$NativeDll = 'E:\Agent任务\进行中\MouseBattery\standalone\candidate\MouseBattery.Native.dll',
+  [string]$OutDir = 'E:\Agent任务\进行中\MouseBattery\robust-v3.2\degraded-probe-v420'
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path

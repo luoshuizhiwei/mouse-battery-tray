@@ -495,7 +495,7 @@ Snapshot Read() {
     // publisher may recreate the named object, and a cached view would keep
     // reading a stale (hours-old) snapshot forever. Open/mapping/close each
     // dispatch - cheap (500ms cadence) and always bound to the live object.
-    HANDLE map=OpenFileMappingW(FILE_MAP_READ,FALSE,L"Local\\MouseBatteryTaskbar.v4");
+    HANDLE map=OpenFileMappingW(FILE_MAP_READ,FALSE,L"Local\\MouseBatteryTaskbar.v2");
     if(!map) return result;
     auto data=(Snapshot const*)MapViewOfFile(map,FILE_MAP_READ,0,0,sizeof(Snapshot));
     if(!data) {CloseHandle(map);return result;}

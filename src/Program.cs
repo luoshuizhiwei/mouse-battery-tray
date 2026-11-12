@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -13,8 +13,8 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("鼠标电量")]
-[assembly: System.Reflection.AssemblyVersion("4.2.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("4.2.1.0")]
+[assembly: System.Reflection.AssemblyVersion("4.4.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("4.4.1.0")]
 namespace MouseBattery {
 internal static class Startup {
     const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -76,7 +76,7 @@ internal static class Program {
 internal sealed class PositionPicker : Control {
     internal static readonly string[] PositionNames={"系统托盘与时钟区域左侧","紧邻时钟左侧","时钟右侧","任务栏最左侧"};
     static readonly int[] VisualOrder={3,0,1,2};
-    const float BarWidth=480f,BarHeight=40f;
+    const float BarWidth=480f,BarHeight=48f;
     float PaintScale() { return (float)Width/BarWidth; } // control is manager.Scale-d; artwork is not
     int position,hover=-1,percent=-1;
     bool light=true,gaming=false,pressed=false;
@@ -85,7 +85,7 @@ internal sealed class PositionPicker : Control {
         SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint|ControlStyles.ResizeRedraw|ControlStyles.SupportsTransparentBackColor,true);
         BackColor=Color.Transparent; TabStop=true; Cursor=Cursors.Hand;
         AccessibleName="任务栏显示位置";
-        AccessibleDescription="迷你任务栏示意图：点击四个落点，或用左右方向键切换电量显示位置";
+        AccessibleDescription="四个任务栏位置选项，点击选择，或用左右方向键切换";
     }
     internal static System.Drawing.Drawing2D.GraphicsPath RoundPath(RectangleF bounds,float radius) {
         var path=new System.Drawing.Drawing2D.GraphicsPath();
@@ -105,58 +105,41 @@ internal sealed class PositionPicker : Control {
     // Artwork sits in the gaps so a drawn element never covers a click target.
     RectangleF[] Zones() {
         return new RectangleF[]{
-            new RectangleF(188,0,52,BarHeight),
-            new RectangleF(292,0,52,BarHeight),
-            new RectangleF(392,0,40,BarHeight),
-            new RectangleF(0,0,52,BarHeight)
+            new RectangleF(122,0,114,BarHeight),
+            new RectangleF(244,0,114,BarHeight),
+            new RectangleF(366,0,114,BarHeight),
+            new RectangleF(0,0,114,BarHeight)
         };
     }
     static Color Mix(Color background,Color top,int alpha) { return Ui.Overlay(background,255,Ui.WithAlpha(top,alpha)); }
     protected override void OnPaint(PaintEventArgs e) {
         var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         g.ScaleTransform(PaintScale(),PaintScale());
-        Color baseColor=Ui.Base(light),border=Ui.Border(light),surface=Ui.Surface(light),text=Ui.Text(light),muted=Ui.Subtext(light),accent=Ui.Accent(light);
-        Color identity=Ui.Identity(gaming,light);
-        Color barFill=Mix(baseColor,border,120);
-        var bar=new RectangleF(0,0,BarWidth,BarHeight);
-        using(var path=RoundPath(bar,10)) {
-            using(var b=new SolidBrush(barFill)) g.FillPath(b,path);
-            using(var p=new Pen(Ui.WithAlpha(border,190))) g.DrawPath(p,path);
-        }
-        using(var b=new SolidBrush(Ui.WithAlpha(surface,180))) {
-            for(int i=0;i<6;i++) using(var path=RoundPath(new RectangleF(60+i*24,12,20,16),3)) g.FillPath(b,path);
-            for(int i=0;i<3;i++) using(var path=RoundPath(new RectangleF(248+i*20,14,12,12),2)) g.FillPath(b,path);
-            using(var path=RoundPath(new RectangleF(352,10,32,20),5)) g.FillPath(b,path);
-        }
+        Color border=Ui.SettingsBorder(light),surface=Ui.SettingsSurface(light),text=Ui.SettingsText(light),muted=Ui.SettingsSubtext(light),accent=Ui.SettingsAccent(light);
+        string[] names={"托盘左侧","时钟左侧","时钟右侧","任务栏左端"};
         var zones=Zones();
         for(int i=0;i<4;i++) {
-            if(i==position) continue;
-            var slot=zones[i];
-            var ghost=new RectangleF(slot.X+(slot.Width-20)/2f,10,20,20);
-            bool isHover=hover==i;
-            using(var path=RoundPath(ghost,6)) {
-                if(isHover) using(var b=new SolidBrush(Ui.WithAlpha(identity,pressed?62:34))) g.FillPath(b,path);
-                using(var p=new Pen(isHover?Ui.WithAlpha(identity,210):Ui.WithAlpha(border,165))) g.DrawPath(p,path);
+            bool selected=i==position;
+            var slot=zones[i]; slot.Inflate(-1,-1);
+            Color fill=selected ? Mix(surface,accent,light?18:32) : hover==i ? Ui.SettingsHover(light) : surface;
+            using(var path=RoundPath(slot,8)) {
+                using(var b=new SolidBrush(fill)) g.FillPath(b,path);
+                using(var pen=new Pen(selected?accent:border,selected?1.5f:1f)) g.DrawPath(pen,path);
+            }
+            using(var font=new Font("Microsoft YaHei UI",13f,selected?FontStyle.Bold:FontStyle.Regular,GraphicsUnit.Pixel))
+            using(var brush=new SolidBrush(selected?Ui.SettingsAccentInk(light):text))
+            using(var format=new StringFormat { Alignment=StringAlignment.Center,LineAlignment=StringAlignment.Center })
+                g.DrawString(names[i],font,brush,slot,format);
+            if(selected && Focused) using(var pen=new Pen(accent,1f)) {
+                pen.DashStyle=System.Drawing.Drawing2D.DashStyle.Dot;
+                var focus=slot; focus.Inflate(-4,-4);
+                using(var path=RoundPath(focus,5)) g.DrawPath(pen,path);
             }
         }
-        var sel=zones[position];
-        float pw=Math.Min(52,sel.Width-8),ph=24;
-        var pill=new RectangleF(sel.X+(sel.Width-pw)/2f,(BarHeight-ph)/2f,pw,ph);
-        using(var path=RoundPath(pill,8)) {
-            using(var brush=new System.Drawing.Drawing2D.LinearGradientBrush(
-                new RectangleF(pill.X,pill.Y,pill.Width,Math.Max(1,pill.Height)),
-                Ui.WithAlpha(identity,150),Ui.WithAlpha(identity,66),
-                System.Drawing.Drawing2D.LinearGradientMode.Vertical)) g.FillPath(brush,path);
-            using(var p=new Pen(Ui.WithAlpha(identity,175))) g.DrawPath(p,path);
-        }
-        string label=percent<0 ? "--" : percent.ToString();
-        Color numberColor=percent<0 ? muted : percent<=10 ? Ui.CritInk(light) : percent<=20 ? Ui.WarnInk(light) : text;
-        using(var font=new Font(Font.FontFamily,11f,FontStyle.Bold,GraphicsUnit.Pixel))
-            TextRenderer.DrawText(g,label,font,Rectangle.Round(pill),numberColor,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
-        if(Focused) using(var p=new Pen(Ui.WithAlpha(accent,235),1.5f))
-            using(var path=RoundPath(new RectangleF(pill.X-2,pill.Y-2,pill.Width+4,pill.Height+4),10)) g.DrawPath(p,path);
-        using(var font=new Font(Font.FontFamily,7.5f,FontStyle.Regular,GraphicsUnit.Point))
-            TextRenderer.DrawText(g,"点击落点或用 ← → 切换",font,new Point(0,(int)(BarHeight+6)),Ui.WithAlpha(muted,175),TextFormatFlags.NoPrefix);
+        using(var font=new Font("Microsoft YaHei UI",11.5f,FontStyle.Regular,GraphicsUnit.Pixel))
+        using(var brush=new SolidBrush(muted))
+            g.DrawString("选择后立即生效  ·  支持 ← → 键切换",font,brush,new PointF(0,56));
     }
     int ZoneAt(Point location) { float k=PaintScale(); if(k>0) location=new Point((int)(location.X/k),(int)(location.Y/k)); var zones=Zones(); for(int i=0;i<4;i++) if(zones[i].Contains(location)) return i; return -1; }
     void Apply(int value) {
@@ -182,6 +165,26 @@ internal sealed class PositionPicker : Control {
 }
 // Shared rounded surface for cards and the degraded banner: soft fill with a
 // 1 px mist-blue stroke, matching the taskbar pill geometry.
+internal sealed class BatteryTrack : Panel {
+    public BatteryTrack() {
+        SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);
+    }
+}
+internal sealed class BatteryReadout : Label {
+    protected override void OnPaint(PaintEventArgs e) {
+        var g=e.Graphics;
+        g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        float y=(Height-Font.GetHeight(g))/2;
+        using(var brush=new SolidBrush(ForeColor)) {
+            g.DrawString(Text,Font,brush,new PointF(0,y),StringFormat.GenericTypographic);
+            float scale=Font.SizeInPoints/48f;
+            if(Text!="--") using(var suffix=new Font(Font.FontFamily,18f*scale,FontStyle.Regular)) {
+                float width=g.MeasureString(Text,Font,PointF.Empty,StringFormat.GenericTypographic).Width;
+                g.DrawString("%",suffix,brush,new PointF(width+5*scale,y+Font.GetHeight(g)-suffix.GetHeight(g)-8*scale),StringFormat.GenericTypographic);
+            }
+        }
+    }
+}
 internal sealed class RoundedPanel : Panel {
     readonly Color fillColor,strokeColor;
     public RoundedPanel(Color fill,Color stroke) { fillColor=fill; strokeColor=stroke; SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint|ControlStyles.ResizeRedraw|ControlStyles.SupportsTransparentBackColor,true); }
@@ -210,7 +213,7 @@ internal sealed class ToggleSwitch : CheckBox {
         Color parent=Parent!=null?Parent.BackColor:SystemColors.Control;
         g.Clear(parent);
         g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        Color accent=Ui.Accent(light),onKnob=Ui.OnAccent(light),border=Ui.Border(light),text=Ui.Text(light),muted=Ui.Subtext(light);
+        Color accent=Ui.SettingsAccent(light),onKnob=(light?Ui.SettingsSurface(light):Ui.SettingsBase(light)),border=Ui.SettingsBorder(light),text=Ui.SettingsText(light),muted=Ui.SettingsSubtext(light);
         int textW=0;
         if(!string.IsNullOrEmpty(Text)) {
             textW=TextRenderer.MeasureText(Text,Font).Width;
@@ -224,7 +227,7 @@ internal sealed class ToggleSwitch : CheckBox {
             stroke=Ui.WithAlpha(border,45);
             knob=Ui.WithAlpha(muted,45);
         } else if(Checked) {
-            fill=pressed?Ui.Overlay(Ui.AccentPlus(light),255,Ui.WithAlpha(text,20)):(hover?Ui.AccentPlus(light):accent);
+            fill=pressed?Ui.Overlay(Ui.SettingsAccent(light),255,Ui.WithAlpha(text,20)):(hover?Ui.SettingsAccent(light):accent);
             stroke=fill; knob=onKnob;
         } else {
             fill=Ui.Overlay(parent,255,Ui.WithAlpha(border,pressed?205:150));
@@ -272,13 +275,13 @@ internal sealed class TrayContext : ApplicationContext {
     readonly MessageWindow dispatcher=new MessageWindow();
     readonly Dictionary<IntPtr,string> rawNames=new Dictionary<IntPtr,string>();
     bool rawInputOk;
+    string rawInputError="";
     readonly EventWaitHandle show;
     readonly EventWaitHandle quit=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ExitEventName);
     readonly EventWaitHandle toggleStartup=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ToggleEventName);
     readonly string statusPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"data","status.txt");
-    Form manager; Label managerDevice, managerConnection, managerPercent, managerUnit, managerCharge, managerCompanion; Panel chip; CheckBox managerStartup; PositionPicker positionPicker;
+    Form manager; Label managerDevice, managerConnection, managerPercent, managerCharge, managerCompanion; CheckBox managerStartup; PositionPicker positionPicker;
     Panel managerTrack;
-    const float NotchHalf=0.75f; // notch centers on the 20%/10% mark (width 1.5)
     bool managerLight;
     int managerLevel;
     bool busy,closing,updatingSettings,disposed;
@@ -291,7 +294,7 @@ internal sealed class TrayContext : ApplicationContext {
     [StructLayout(LayoutKind.Sequential)] struct RawInputDevice { public ushort UsagePage,Usage; public uint Flags; public IntPtr Target; }
     [StructLayout(LayoutKind.Sequential)] struct RawInputHeader { public uint Type,Size; public IntPtr Device,WParam; }
     [DllImport("user32.dll",SetLastError=true)] static extern bool RegisterRawInputDevices(RawInputDevice[] devices,uint count,uint size);
-    [DllImport("user32.dll")] static extern uint GetRawInputData(IntPtr hRawInput,uint command,byte[] data,ref uint size,uint headerSize);
+    [DllImport("user32.dll",SetLastError=true)] static extern uint GetRawInputData(IntPtr hRawInput,uint command,byte[] data,ref uint size,uint headerSize);
     [DllImport("user32.dll",SetLastError=true)] static extern uint GetRawInputDeviceInfoW(IntPtr hDevice,uint command,IntPtr data,ref uint size);
     internal TrayContext(EventWaitHandle signal,bool manage) {
         show=signal; showOnStart=manage;
@@ -312,6 +315,7 @@ internal sealed class TrayContext : ApplicationContext {
         var rid=new RawInputDevice[1];
         rid[0]=new RawInputDevice { UsagePage=1,Usage=2,Flags=0x100,Target=handle }; // usagePage 1 generic desktop, usage 2 mouse, INPUTSINK
         rawInputOk=RegisterRawInputDevices(rid,1,(uint)Marshal.SizeOf(typeof(RawInputDevice)));
+        if(!rawInputOk) rawInputError="RegisterRawInputDevices: "+Marshal.GetLastWin32Error();
         dispatcher.OnMessage=delegate(Message m) { if(m.Msg==0x00FF) HandleRawInput(m); };
         Microsoft.Win32.SystemEvents.UserPreferenceChanged+=OnPreferenceChanged;
         timer.Interval=250; timer.Tick+=Tick; timer.Start();
@@ -329,34 +333,32 @@ internal sealed class TrayContext : ApplicationContext {
         });
     }
     void HandleRawInput(Message m) {
-        try {
-            // RID_INPUT needs header + RAWMOUSE, not just the header; an
-            // undersized buffer plus a busy UI thread (settings opening) is a
-            // heap-corruption recipe this build actually hit (0xC0000374).
+            // RID_INPUT needs header + RAWMOUSE. RIDI_DEVICENAME below counts
+            // UTF-16 characters; that separate allocation caused the old heap bug.
             uint headerSize=(uint)Marshal.SizeOf(typeof(RawInputHeader));
             var data=new byte[256]; uint got=(uint)data.Length;
-            if(GetRawInputData(m.LParam,0x10000005,data,ref got,headerSize)==unchecked((uint)-1)) return;
-            if(got<headerSize) return;
+            if(GetRawInputData(m.LParam,0x10000005,data,ref got,headerSize)==unchecked((uint)-1)) { rawInputError="GetRawInputData: "+Marshal.GetLastWin32Error(); return; }
+            if(got<headerSize) { rawInputError="GetRawInputData: incomplete header"; return; }
             IntPtr hDevice=(IntPtr)Marshal.ReadInt64(data,8);
             if(hDevice==IntPtr.Zero) return;
             string path;
             if(!rawNames.TryGetValue(hDevice,out path)) {
                 uint size=0;
-                if(GetRawInputDeviceInfoW(hDevice,0x20000007,IntPtr.Zero,ref size)==unchecked((uint)-1) || size<2) { rawNames[hDevice]=null; return; }
-                var buf=Marshal.AllocHGlobal((int)size+16);
+                if(GetRawInputDeviceInfoW(hDevice,0x20000007,IntPtr.Zero,ref size)==unchecked((uint)-1)) { rawInputError="Raw device name size: "+Marshal.GetLastWin32Error(); return; }
+                if(size<2) { rawInputError="Raw device name is empty"; return; }
+                // RIDI_DEVICENAME counts UTF-16 characters; AllocHGlobal counts bytes.
+                var buf=Marshal.AllocHGlobal(checked(((int)size+16)*sizeof(char)));
                 try {
                     uint cap=size+16;
-                    if(GetRawInputDeviceInfoW(hDevice,0x20000007,buf,ref cap)==unchecked((uint)-1) || cap>size+16) { rawNames[hDevice]=null; return; }
+                    if(GetRawInputDeviceInfoW(hDevice,0x20000007,buf,ref cap)==unchecked((uint)-1)) { rawInputError="Raw device name: "+Marshal.GetLastWin32Error(); return; }
+                    if(cap>size+16) { rawInputError="Raw device name exceeds capacity"; return; }
                     path=Marshal.PtrToStringUni(buf);
                 } finally { Marshal.FreeHGlobal(buf); }
-                rawNames[hDevice]=null;
-                if(path==null) return;
+                if(path==null) { rawInputError="Raw device name is null"; return; }
                 rawNames[hDevice]=path;
             }
-            if(path==null) return;
             string key=state.KeyForRawPath(path.ToLowerInvariant());
             if(key!=null) state.SetActive(key);
-        } catch { }
     }
     internal static string ShortHash(string reason) {
         if(reason==null) return "详见 data\\status.txt";
@@ -384,7 +386,6 @@ internal sealed class TrayContext : ApplicationContext {
             if(closing) return;
             state.Apply(result.ToArray(),uptime.ElapsedMilliseconds);
             state.MarkFailed(source.FailedPaths.ToArray(),uptime.ElapsedMilliseconds);
-            if(result.Count>0) publisher.MarkSuccess();
             failure=source.LastError;
             // Per-device backoff lives inside BatterySource; the outer cadence
             // only reacts to whether anything at all answered this cycle.
@@ -412,7 +413,7 @@ internal sealed class TrayContext : ApplicationContext {
         }
         string status=visible ? text : "未连接或电量暂不可用\n"+failure;
         if(manager!=null && !manager.IsDisposed) UpdateManagerDisplay(visible);
-        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nActiveKey="+(state.ActiveKey??"(none)")+"\nRawInput="+(rawInputOk?"on":"off")+"\nDevices="+state.Describe(now)+"\nPollInterval="+pollInterval+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
+        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nActiveKey="+(state.ActiveKey??"(none)")+"\nRawInput="+(rawInputOk?"on":"off")+"\nRawInputError="+rawInputError+"\nDevices="+state.Describe(now)+"\nPollInterval="+pollInterval+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
         if(diagnostic!=lastStatus) {
             try { File.WriteAllText(statusPath,DateTimeOffset.Now.ToString("o")+"\n"+diagnostic,Encoding.UTF8); }
             catch(IOException ex) { ShowFileError(ex.Message); }
@@ -448,7 +449,7 @@ internal sealed class TrayContext : ApplicationContext {
         if(!degradedAnnounced) { degradedAnnounced=true; trayIcon.ShowBalloonTip(8000,"鼠标电量",reason,ToolTipIcon.Warning); }
     }
     private void UpdateTrayIcon(bool visible,string text) {
-        string tip=visible ? text.Replace("\n"," · ") : "鼠标电量不可用";
+        string tip=state.TrayTooltip(uptime.ElapsedMilliseconds);
         if(tip.Length>63) tip=tip.Substring(0,63);
         trayIcon.Text=tip;
         int percent=visible && state.Displayed(uptime.ElapsedMilliseconds)!=null ? state.Displayed(uptime.ElapsedMilliseconds).Percent : -1;
@@ -497,7 +498,8 @@ internal sealed class TrayContext : ApplicationContext {
         updatingSettings=false;
     }
     private void UpdateManagerDisplay(bool visible) {
-        Color normalText=GetColor(managerLight, MouseBattery.Ui.TextLight, MouseBattery.Ui.TextDark);
+        int previousLevel=managerLevel;
+        Color normalText=Ui.SettingsText(managerLight);
         Color amberText=MouseBattery.Ui.WarnInk(managerLight);
         Color redText=MouseBattery.Ui.CritInk(managerLight);
 
@@ -508,7 +510,6 @@ internal sealed class TrayContext : ApplicationContext {
             managerPercent.ForeColor=shown.Percent<=10 ? redText : shown.Percent<=20 ? amberText : normalText;
             managerCharge.Text=shown.Gaming ? shown.ChargeText : "AA 电池供电";
             managerConnection.Text=state.DisplayedFailed(uptime.ElapsedMilliseconds) ? "正在重连 · 上次读数" : shown.Connection; // F8: product line lives in the chip, not the connection string
-            managerUnit.Visible=true;
             managerLevel=shown.Percent;
         } else {
             managerDevice.Text="鼠标设备未连接";
@@ -516,98 +517,81 @@ internal sealed class TrayContext : ApplicationContext {
             managerPercent.ForeColor=normalText;
             managerCharge.Text="暂无电量";
             managerConnection.Text=string.IsNullOrEmpty(failure) ? "等待设备连接" : failure;
-            managerUnit.Visible=false; // F7: "--" alone, never "-- %"
             managerLevel=-1;
         }
+        managerPercent.AccessibleName=shown!=null ? shown.Percent+"%" : "暂无电量";
         // Companion device line (design doc §3.1 priority 5): tooltip line 2.
         string tip=state.Tooltip(uptime.ElapsedMilliseconds);
         int nl=tip.IndexOf('\n');
         bool hasCompanion=visible && nl>=0 && nl+1<tip.Length;
         managerCompanion.Visible=hasCompanion;
         if(hasCompanion) managerCompanion.Text=tip.Substring(nl+1);
-        managerTrack.Invalidate();
+        if(managerLevel!=previousLevel) managerTrack.Invalidate();
         if(positionPicker!=null && !positionPicker.IsDisposed) { positionPicker.Gaming=shown!=null&&shown.Gaming; positionPicker.Percent=managerLevel; positionPicker.Invalidate(); }
-        if(manager!=null && !manager.IsDisposed) chip.Invalidate(); // product-line chip tracks the displayed device
     }
     private void ShowManager() {
         if(manager==null || manager.IsDisposed) {
             bool light=AppsUseLightTheme();
             managerLight=light;
-            Color background=MouseBattery.Ui.Base(light);
-            Color surface=MouseBattery.Ui.Surface(light);
-            Color foreground=MouseBattery.Ui.Text(light);
-            Color muted=MouseBattery.Ui.Subtext(light);
-            Color accent=MouseBattery.Ui.Accent(light);
-            Color border=MouseBattery.Ui.Border(light);
-            Color scrim=MouseBattery.Ui.Scrim(light);
+            Color background=MouseBattery.Ui.SettingsBase(light);
+            Color surface=MouseBattery.Ui.SettingsSurface(light);
+            Color foreground=MouseBattery.Ui.SettingsText(light);
+            Color muted=MouseBattery.Ui.SettingsSubtext(light);
+            Color accent=MouseBattery.Ui.SettingsAccent(light);
+            Color border=MouseBattery.Ui.SettingsBorder(light);
             manager=new Form { Text="鼠标电量", AutoScaleMode=AutoScaleMode.None, Font=new Font("Microsoft YaHei UI",9f), ClientSize=new Size(MouseBattery.Ui.WidthWindow,degraded ? MouseBattery.Ui.HeightWindowDegraded : MouseBattery.Ui.HeightWindowNormal), BackColor=background,ForeColor=foreground, FormBorderStyle=FormBorderStyle.FixedDialog, MaximizeBox=false, MinimizeBox=false, StartPosition=FormStartPosition.CenterScreen };
             var controls=new List<Control>();
-            int headerY=20;
-            var mark=new Panel { Location=new Point(20,headerY),Size=new Size(26,26) };
-            mark.Paint+=delegate(object sender,PaintEventArgs e) {
-                var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                int level=Math.Max(0,managerLevel);
-                Color shell=level<=0 ? border : level<=10 ? MouseBattery.Ui.Red(light) : level<=20 ? MouseBattery.Ui.Yellow(light) : accent;
-                using(var pen=new Pen(shell,1.6f)) using(var path=PositionPicker.RoundPath(new RectangleF(1,2,20,20),5f)) g.DrawPath(pen,path);
-                using(var b=new SolidBrush(shell)) { g.FillRectangle(b,22,8,3,8); if(level>0) { int h=(int)(16*level/100f); if(h>1) using(var path=PositionPicker.RoundPath(new RectangleF(4.5f,3+16-h,13,h),2f)) g.FillPath(b,path); } }
-            };
-            var heading=new Label { Text="鼠标电量",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeDisplayTitle),FontStyle.Bold),Location=new Point(58,headerY-2),AutoSize=true };
-            var subtitle=new Label { Text="任务栏与启动设置",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,210),Location=new Point(58,headerY+24),AutoSize=true };
-            controls.Add(mark); controls.Add(heading); controls.Add(subtitle);
-            int bodyY=76;
+            var heading=new Label { Text="鼠标电量",Font=new Font("Microsoft YaHei UI",18f,FontStyle.Bold),Location=new Point(24,20),AutoSize=true };
+            var subtitle=new Label { Text="设备状态与任务栏设置",Font=new Font("Microsoft YaHei UI",9.75f),ForeColor=muted,Location=new Point(25,54),AutoSize=true };
+            controls.Add(heading); controls.Add(subtitle);
+            int bodyY=92;
             if(degraded) {
                 Color bannerBg=MouseBattery.Ui.Overlay(background,255,MouseBattery.Ui.WithAlpha(MouseBattery.Ui.Yellow(light),light?22:26));
                 Color bannerLine=MouseBattery.Ui.WithAlpha(MouseBattery.Ui.Yellow(light),105);
-                Color bannerText=light ? MouseBattery.Ui.YellowLight : MouseBattery.Ui.WithAlpha(MouseBattery.Ui.YellowDark,245);
+                Color bannerText=MouseBattery.Ui.WarnInk(light);
                 var banner=new RoundedPanel(bannerBg,bannerLine) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,58) };
                 var rail=new Panel { Location=new Point(0,0),Size=new Size(3,58),BackColor=MouseBattery.Ui.WithAlpha(MouseBattery.Ui.Yellow(light),210) };
                 banner.Controls.Add(rail);
-                var bannerLabel=new Label { Text="任务栏版本未适配，当前以托盘图标显示电量（指纹 "+ShortHash(degradedReason)+"），适配后自动恢复",Location=new Point(20,6),Size=new Size(470,46),Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=bannerText ,BackColor=Color.Transparent};
+                var bannerLabel=new Label { Text="当前使用托盘显示电量\n此 Windows 任务栏版本尚未适配。",Location=new Point(20,7),Size=new Size(470,46),Font=new Font("Microsoft YaHei UI",9.75f),ForeColor=bannerText ,BackColor=Color.Transparent};
                 banner.Controls.Add(bannerLabel);
                 controls.Add(banner);
                 bodyY+=70;
             }
-            var statusCard=new RoundedPanel(surface,border) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,172) };
-            managerDevice=new Label { Location=new Point(20,20),Size=new Size(320,24),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeHeading),FontStyle.Bold) ,BackColor=Color.Transparent};
-            chip=new Panel { Location=new Point(380,18),Size=new Size(120,20) };
-            chip.Paint+=delegate(object sender,PaintEventArgs e) {
-                var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                var shownNow=state.Displayed(uptime.ElapsedMilliseconds);
-                bool gamingNow=shownNow!=null && shownNow.Gaming;
-                Color id=MouseBattery.Ui.Identity(gamingNow,light);
-                using(var b=new SolidBrush(MouseBattery.Ui.Overlay(surface,255,MouseBattery.Ui.WithAlpha(id,26)))) using(var path=PositionPicker.RoundPath(new RectangleF(0.5f,0.5f,chip.Width-1,chip.Height-1),10f)) g.FillPath(b,path);
-                using(var p=new Pen(MouseBattery.Ui.WithAlpha(id,110))) using(var path=PositionPicker.RoundPath(new RectangleF(0.5f,0.5f,chip.Width-1,chip.Height-1),10f)) g.DrawPath(p,path);
-                g.FillEllipse(new SolidBrush(id),8,7,6,6);
-                TextRenderer.DrawText(g,gamingNow?"PRO X":"Signature",new Font("Segoe UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeFaint),FontStyle.Bold),new Rectangle(18,0,chip.Width-20,chip.Height),id,TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
-            };
-            managerPercent=new Label { Location=new Point(20,46),Size=new Size(160,52),Font=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeNumeral),FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft ,BackColor=Color.Transparent};
-            managerUnit=new Label { Text="%",Location=new Point(180,72),Size=new Size(30,24),Font=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeUnit)),ForeColor=MouseBattery.Ui.WithAlpha(muted,205),TextAlign=ContentAlignment.MiddleLeft ,BackColor=Color.Transparent};
-            managerCharge=new Label { Location=new Point(300,55),Size=new Size(200,18),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),TextAlign=ContentAlignment.MiddleRight ,BackColor=Color.Transparent};
-            managerConnection=new Label { Location=new Point(300,75),Size=new Size(200,16),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,190),TextAlign=ContentAlignment.MiddleRight,AutoEllipsis=true ,BackColor=Color.Transparent};
-            managerTrack=new Panel { Location=new Point(20,114),Size=new Size(448,MouseBattery.Ui.HeightTrack),BackColor=border,AccessibleName="当前电量刻度" };
-            managerCompanion=new Label { Location=new Point(20,134),Size=new Size(480,17),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,190),Visible=false ,BackColor=Color.Transparent};
+            var statusCard=new RoundedPanel(surface,border) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,184) };
+            managerDevice=new Label { Location=new Point(24,20),Size=new Size(472,26),Font=new Font("Segoe UI",12f,FontStyle.Bold),AutoEllipsis=true,BackColor=Color.Transparent };
+            managerPercent=new BatteryReadout { Location=new Point(24,48),Size=new Size(240,86),Font=new Font("Segoe UI Variable Display",48f,FontStyle.Bold),AccessibleName="鼠标电量",BackColor=Color.Transparent };
+            managerCharge=new Label { Location=new Point(284,74),Size=new Size(212,23),Font=new Font("Microsoft YaHei UI",10.5f),TextAlign=ContentAlignment.MiddleRight,BackColor=Color.Transparent };
+            managerConnection=new Label { Location=new Point(284,101),Size=new Size(212,22),Font=new Font("Microsoft YaHei UI",9.75f),ForeColor=muted,TextAlign=ContentAlignment.MiddleRight,AutoEllipsis=true,BackColor=Color.Transparent };
+            managerTrack=new BatteryTrack { Location=new Point(24,143),Size=new Size(472,8),BackColor=surface,AccessibleName="当前电量刻度" };
+            managerCompanion=new Label { Location=new Point(24,159),Size=new Size(472,20),Font=new Font("Microsoft YaHei UI",9f),ForeColor=muted,Visible=false,AutoEllipsis=true,BackColor=Color.Transparent };
             managerTrack.Paint+=delegate(object sender,PaintEventArgs e) {
                 int level=Math.Max(0,managerLevel);
-                var shownNow=state.Displayed(uptime.ElapsedMilliseconds);
-                bool gamingNow=shownNow!=null && shownNow.Gaming;
-                Color fill=level<0 ? muted : level<=10 ? MouseBattery.Ui.Red(light) : level<=20 ? MouseBattery.Ui.Yellow(light) : MouseBattery.Ui.Identity(gamingNow,light);
-                using(var brush=new SolidBrush(fill)) e.Graphics.FillRectangle(brush,0,0,managerTrack.Width*level/100f,managerTrack.Height);
-                Color neutralTick=MouseBattery.Ui.WithAlpha(muted,110);
-                Color highTick=level>=0&&level<=20 ? MouseBattery.Ui.Yellow(light) : neutralTick;
-                Color critTick=level>=0&&level<=10 ? MouseBattery.Ui.Red(light) : neutralTick;
-                using(var b=new SolidBrush(highTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.2f-NotchHalf,0,MouseBattery.Ui.NotchWidth,managerTrack.Height);
-                using(var b=new SolidBrush(critTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.1f-NotchHalf,0,MouseBattery.Ui.NotchWidth,managerTrack.Height);
+                Color fill=managerLevel<0 ? muted : level<=10 ? MouseBattery.Ui.Red(light) : level<=20 ? MouseBattery.Ui.Yellow(light) : accent;
+                float segment=(managerTrack.Width-19*4)/20f;
+                for(int i=0;i<20;i++) {
+                    var bounds=new RectangleF(i*(segment+4),0,segment,managerTrack.Height);
+                    using(var path=PositionPicker.RoundPath(bounds,2)) {
+                        using(var brush=new SolidBrush(border)) e.Graphics.FillPath(brush,path);
+                        float amount=Math.Max(0,Math.Min(1,level/5f-i));
+                        if(amount>0) {
+                            var saved=e.Graphics.Save();
+                            e.Graphics.SetClip(new RectangleF(bounds.X,0,bounds.Width*amount,bounds.Height));
+                            using(var brush=new SolidBrush(fill)) e.Graphics.FillPath(brush,path);
+                            e.Graphics.Restore(saved);
+                        }
+                    }
+                }
             };
-            statusCard.Controls.AddRange(new Control[]{managerDevice,chip,managerPercent,managerUnit,managerCharge,managerConnection,managerTrack,managerCompanion});
+            statusCard.Controls.AddRange(new Control[]{managerDevice,managerPercent,managerCharge,managerConnection,managerTrack,managerCompanion});
             controls.Add(statusCard);
-            bodyY+=172+12;
+            bodyY+=184+16;
             int rowY;
             if(!degraded) {
-                var cardB=new RoundedPanel(scrim,MouseBattery.Ui.WithAlpha(border,150)) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,134) };
-                var pickerLabel=new Label { Text="显示位置",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),Location=new Point(20,16),AutoSize=true ,BackColor=Color.Transparent};
-                var pickerValue=new Label { Text=PositionPicker.PositionNames[position],Location=new Point(320,16),Size=new Size(160,18),Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),ForeColor=Ui.Text(light),BackColor=Color.Transparent,TextAlign=ContentAlignment.MiddleRight };
+                var cardB=new RoundedPanel(surface,border) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,156) };
+                var pickerLabel=new Label { Text="任务栏位置",Font=new Font("Microsoft YaHei UI",10.5f,FontStyle.Bold),Location=new Point(20,16),AutoSize=true,BackColor=Color.Transparent };
+                var pickerValue=new Label { Text=PositionPicker.PositionNames[position],Location=new Point(20,42),Size=new Size(480,22),Font=new Font("Microsoft YaHei UI",9.75f),ForeColor=muted,BackColor=Color.Transparent };
                 cardB.Controls.Add(pickerLabel); cardB.Controls.Add(pickerValue);
-                positionPicker=new PositionPicker { Location=new Point(20,40),Size=new Size(480,68) };
+                positionPicker=new PositionPicker { Location=new Point(20,74),Size=new Size(480,76) };
                 positionPicker.SetTheme(light);
                 positionPicker.Position=position;
                 positionPicker.PositionChanged+=delegate {
@@ -619,19 +603,19 @@ internal sealed class TrayContext : ApplicationContext {
                 };
                 cardB.Controls.Add(positionPicker);
                 controls.Add(cardB);
-                rowY=bodyY+134+14;
+                rowY=bodyY+156+20;
             } else rowY=bodyY+10;
-            managerStartup=new ToggleSwitch(light) { Text="登录 Windows 后自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(20,rowY),Checked=Startup.Enabled };
+            managerStartup=new ToggleSwitch(light) { Text="开机自动启动",AccessibleName="登录 Windows 后自动启动",AccessibleDescription="控制鼠标电量工具是否在登录后后台运行",Location=new Point(24,rowY),Font=new Font("Microsoft YaHei UI",10f),Size=new Size(248,28),Checked=Startup.Enabled };
             managerStartup.CheckedChanged+=delegate { if(!updatingSettings) SetStartup(managerStartup.Checked); };
             controls.Add(managerStartup);
-            var hairline=new Panel { Location=new Point(20,rowY+40),Size=new Size(MouseBattery.Ui.WidthCardWindow,1),BackColor=MouseBattery.Ui.WithAlpha(border,115) };
+            var hairline=new Panel { Location=new Point(20,rowY+42),Size=new Size(MouseBattery.Ui.WidthCardWindow,1),BackColor=MouseBattery.Ui.WithAlpha(border,115) };
             controls.Add(hairline);
-            var note=new Label { Text=degraded ? "关闭窗口后继续在托盘显示" : "关闭窗口后继续在任务栏显示",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMicro)),ForeColor=muted,Location=new Point(20,rowY+50),AutoSize=true };
-            int buttonY=rowY+78;
-            var exit=new Button { Text="退出工具",Location=new Point(MouseBattery.Ui.WidthWindow-20-96-12-96,buttonY),Size=new Size(96,34),FlatStyle=FlatStyle.Flat,BackColor=background,ForeColor=muted };
-            exit.FlatAppearance.BorderSize=0; exit.FlatAppearance.MouseOverBackColor=MouseBattery.Ui.GhostHover(light); exit.FlatAppearance.MouseDownBackColor=MouseBattery.Ui.GhostPressed(light); exit.Click+=delegate { ExitThread(); };
-            var close=new Button { Text="完成",AccessibleName="完成设置并关闭窗口",Location=new Point(MouseBattery.Ui.WidthWindow-20-96,buttonY),Size=new Size(96,34),FlatStyle=FlatStyle.Flat,BackColor=accent,ForeColor=MouseBattery.Ui.OnAccent(light) };
-            close.FlatAppearance.BorderSize=0; close.FlatAppearance.MouseOverBackColor=MouseBattery.Ui.AccentPlus(light); close.FlatAppearance.MouseDownBackColor=MouseBattery.Ui.Overlay(MouseBattery.Ui.Accent(light),255,MouseBattery.Ui.WithAlpha(foreground,54)); close.Click+=delegate { manager.Close(); };
+            var note=new Label { Text=degraded ? "关闭窗口后继续在托盘显示" : "关闭窗口后继续在任务栏显示",Font=new Font("Microsoft YaHei UI",9f),ForeColor=muted,Location=new Point(24,rowY+56),AutoSize=true };
+            int buttonY=rowY+82;
+            var exit=new Button { Text="退出工具",Location=new Point(MouseBattery.Ui.WidthWindow-20-96-12-96,buttonY),Size=new Size(96,36),FlatStyle=FlatStyle.Flat,BackColor=background,ForeColor=muted };
+            exit.FlatAppearance.BorderSize=0; exit.FlatAppearance.MouseOverBackColor=MouseBattery.Ui.SettingsHover(light); exit.FlatAppearance.MouseDownBackColor=MouseBattery.Ui.SettingsActionHover(light); exit.Click+=delegate { ExitThread(); };
+            var close=new Button { Text="完成",AccessibleName="完成设置并关闭窗口",Location=new Point(MouseBattery.Ui.WidthWindow-20-96,buttonY),Size=new Size(96,36),FlatStyle=FlatStyle.Flat,BackColor=Ui.SettingsAction(light),ForeColor=Ui.SettingsAccentInk(light) };
+            close.FlatAppearance.BorderSize=0; close.FlatAppearance.MouseOverBackColor=Ui.SettingsActionHover(light); close.FlatAppearance.MouseDownBackColor=Ui.SettingsActionHover(light); close.Click+=delegate { manager.Close(); };
             // Enter/Esc close the window only; exiting the resident tool stays an explicit click.
             manager.AcceptButton=close; manager.CancelButton=close;
             controls.Add(note); controls.Add(exit); controls.Add(close);
@@ -641,7 +625,13 @@ internal sealed class TrayContext : ApplicationContext {
             using(var graphics=manager.CreateGraphics()) {
                 float uiScale=graphics.DpiX/96f;
                 manager.Scale(new SizeF(uiScale,uiScale));
+                using(var path=PositionPicker.RoundPath(new RectangleF(0,0,close.Width,close.Height),8*uiScale)) close.Region=new Region(path);
+                using(var path=PositionPicker.RoundPath(new RectangleF(0,0,exit.Width,exit.Height),8*uiScale)) exit.Region=new Region(path);
             }
+            manager.AutoScroll=true;
+            int availableHeight=Screen.FromControl(manager).WorkingArea.Height-32;
+            if(manager.Height>availableHeight) manager.Height=availableHeight;
+            manager.ActiveControl=close;
             RefreshDisplay(); manager.Show();
             ShowWindow(manager.Handle,1); manager.Activate();
         }

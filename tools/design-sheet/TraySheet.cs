@@ -11,7 +11,7 @@ class TraySheet {
     static readonly int[] Sizes = { 16, 24, 32 };
 
     static int Main(string[] args) {
-        string outDir = args.Length > 0 ? args[0] : @"E:\MouseBattery\design-sheet\tray";
+        string outDir = args.Length > 0 ? args[0] : @"E:\Agent任务\进行中\MouseBattery\design-sheet\tray";
         Directory.CreateDirectory(outDir);
         int cell = 96, pad = 14, labelH = 18, headerH = 46;
         int width = pad * 2 + Levels.Length * cell;

@@ -16,7 +16,6 @@ class SheetHost {
     const string Bluetooth = "\u84dd\u7259";    // maps to transport 3
     const string CompanionProX = "PRO X 2 DEX";
     const string CompanionOffice = "Signature Plus M750 L";
-    const long Now = 20000;
 
     static int Main(string[] args) {
         if(args.Length < 2) { Console.WriteLine("usage: SheetHost <cells.csv> <handshakeDir>"); return 2; }
@@ -33,6 +32,7 @@ class SheetHost {
 
         string[] lines = File.ReadAllLines(args[0]);
         int cells = 0;
+        var clock=Stopwatch.StartNew();
         using(var publisher = new TaskbarPublisher()) using(var host = new NativeHost()) {
             for(int i = 0; i < lines.Length; i++) {
                 string line = lines[i].Trim();
@@ -50,18 +50,18 @@ class SheetHost {
                 int compStale = ParseInt(c[8]);
                 int themeOverride = c.Length > 9 ? ParseInt(c[9]) : 0;
 
+                long now=20000+clock.ElapsedMilliseconds;
                 var state = new DisplayState();
                 var primary = Reading(name, "unit-primary", "hid#sheet-primary", percent, charging, gaming == 1, transport);
-                state.Apply(new[]{ primary }, Now);
+                state.Apply(new[]{ primary }, now);
                 if(companion == 1) {
                     bool otherGaming = gaming != 1;
                     var other = Reading(otherGaming ? CompanionProX : CompanionOffice, "unit-companion", "hid#sheet-companion",
                         78, 0, otherGaming, otherGaming ? 2 : 3);
-                    state.Apply(new[]{ other }, compStale == 1 ? 0 : 19000);
+                    state.Apply(new[]{ other }, compStale == 1 ? now-20000 : now-1000);
                 }
-                if(stale == 2) state.MarkFailed(new[]{ primary.Path }, Now);
-                publisher.MarkSuccess();
-                publisher.Publish(state, Now, 0, false, themeOverride);
+                if(stale == 2) state.MarkFailed(new[]{ primary.Path }, now);
+                publisher.Publish(state, now, 0, false, themeOverride);
 
                 string status = "";
                 bool matched = false;

@@ -1,6 +1,6 @@
-param([string]$CompilerRoot='E:\MouseBattery\taskbar-v2\build-tools\Compiler')
+param([string]$CompilerRoot='E:\Agent任务\进行中\MouseBattery\taskbar-v2\build-tools\Compiler')
 $ErrorActionPreference='Stop'
-$output='E:\MouseBattery\standalone\candidate\MouseBattery.Native.dll'
+$output='E:\Agent任务\进行中\MouseBattery\standalone\candidate\MouseBattery.Native.dll'
 $source=Join-Path $PSScriptRoot 'native\NativeHost.cpp'
 Push-Location $CompilerRoot
 try {

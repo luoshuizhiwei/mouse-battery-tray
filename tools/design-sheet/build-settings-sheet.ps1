@@ -1,4 +1,4 @@
-param([string]$OutputDirectory = 'E:\MouseBattery\design-sheet\bin')
+param([string]$OutputDirectory = 'E:\Agent任务\进行中\MouseBattery\design-sheet\bin')
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'

@@ -1,10 +1,10 @@
 param(
   [string]$OutPath = '',
-  [string]$AppExe = 'E:\MouseBattery\app\MouseBattery.exe'
+  [string]$AppExe = 'E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe'
 )
 $ErrorActionPreference = 'Stop'
 if (-not $OutPath) {
-  $dir = 'E:\MouseBattery\design-sheet\settings'
+  $dir = 'E:\Agent任务\进行中\MouseBattery\design-sheet\settings'
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $OutPath = Join-Path $dir ('settings-' + (Get-Date).ToString('yyyyMMdd-HHmmss') + '.png')
 }

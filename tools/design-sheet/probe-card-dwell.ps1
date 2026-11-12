@@ -1,4 +1,4 @@
-param([string]$SheetDir = 'E:\MouseBattery\design-sheet')
+param([string]$SheetDir = 'E:\Agent任务\进行中\MouseBattery\design-sheet')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
@@ -57,8 +57,8 @@ New-Item -ItemType Directory -Force -Path $hsDir | Out-Null
 $cells = Join-Path $runDir 'cells.csv'
 Set-Content -LiteralPath $cells -Value "T-DWELL,85,0,1,1,2,PRO X 2 DEX,1,0" -Encoding ASCII
 
-$app = 'E:\MouseBattery\app\MouseBattery.exe'
-$hostExe = 'E:\MouseBattery\design-sheet\bin\SheetHost.exe'
+$app = 'E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe'
+$hostExe = 'E:\Agent任务\进行中\MouseBattery\design-sheet\bin\SheetHost.exe'
 $orig = [System.Windows.Forms.Cursor]::Position
 $proc = $null
 try {

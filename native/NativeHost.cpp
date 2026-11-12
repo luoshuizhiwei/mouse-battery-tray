@@ -7,7 +7,7 @@
 #include <tlhelp32.h>
 
 namespace {
-constexpr wchar_t HealthName[]=L"Local\\MouseBatteryTaskbar.NativeHealth.v4";
+constexpr wchar_t HealthName[]=L"Local\\MouseBatteryTaskbar.NativeHealth.v3";
 struct Health {
     uint32_t magic; volatile LONG sequence; uint32_t state,owner;
     uint64_t tick;
@@ -57,11 +57,14 @@ namespace {
 // fingerprint to managed code. Profile rows keyed by PE TimeDateStamp.
 //  - 1989904251: 26100.9711 (pre-KB5127936)
 //  - 1635664427: 26100.9818 (post-KB5127936/KB5132402, 2026-11-04)
+//  - 3222852627: 26100.9818-respawn (post-KB5132061/KB5132688, 2026-11-11;
+//    .text shifted slightly but all four target RVAs byte-identical - verified
+//    against WinSxS 9818 copy by direct diff)
 // RVAs located via MS public PDB (taskbar.pdb 8645A6F8C08FC8A18DACD4B77CF1E2EE1):
 //   FrameHeight = TaskbarHost::FrameHeight @ 0xB10A4 (element offset 0x10)
 //   Decref      = std::_Ref_count_base::_Decref    @ 0x290B0
-//   GetHost     = TaskListWnd::GetHost             @ 0xF9C40
-//   siteVtable  = TaskListWnd site vftable         @ 0x1CFA30 (thunk imm 0x40/0x50/0x50)
+//   GetHost     = CTaskBand::GetTaskbarHost         @ 0x1237B0
+//   siteVtable  = CTaskBand ITaskListWndSite table @ 0x1CFA30
 bool InitializeProfile(); // defined below with the profile table
 DWORD WINAPI NativeWorker(void* parameter) {
     HMODULE self=(HMODULE)parameter;
@@ -128,7 +131,7 @@ bool CheckProfile(bool apply,DWORD* stampOut,DWORD* imageOut,DWORD* checkOut) {
     auto dos=(IMAGE_DOS_HEADER*)base;
     auto nt=(IMAGE_NT_HEADERS64*)(base+dos->e_lfanew);
     DWORD stamp=nt->FileHeader.TimeDateStamp,image=nt->OptionalHeader.SizeOfImage,check=nt->OptionalHeader.CheckSum;
-    bool match=(stamp==1635664427 && image==3252224 && check==3342558);
+    bool match=(stamp==3222852627 && image==3252224 && check==3317530);
     if(match && apply) {
         g_siteVtable=base+1899056;
         g_getHost=(GetHostFn)(base+1023040);
@@ -151,20 +154,11 @@ bool InitializeProfile() {
 }
 
 extern "C" __declspec(dllexport) DWORD WINAPI NativeProbeTaskbar(wchar_t* fingerprintBuffer,DWORD bufferChars) {
-    BYTE probeBase=0;
-    auto base=(BYTE*)LoadLibraryExW(L"taskbar.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if(!base) return ERROR_NOT_SUPPORTED;
-    auto dos=(IMAGE_DOS_HEADER*)base;
-    auto nt=(IMAGE_NT_HEADERS64*)(base+dos->e_lfanew);
-    DWORD stamp=nt->FileHeader.TimeDateStamp;
-    DWORD image=nt->OptionalHeader.SizeOfImage;
-    DWORD check=nt->OptionalHeader.CheckSum;
-    FreeLibrary((HMODULE)base);
-    bool match=(stamp==1635664427 && image==3252224 && check==3342558);
-    if(match && !CheckProfile(false,nullptr,nullptr,nullptr)) match=false; // RVAs/prologue must also agree
-    if(match) return ERROR_SUCCESS;
+    DWORD stamp=0,image=0,check=0;
+    // SSOT: single call into the profile table. No duplicated constants here.
+    bool ok=CheckProfile(false,&stamp,&image,&check);
+    if(ok) return ERROR_SUCCESS;
     if(fingerprintBuffer && bufferChars>=8) {
-        // return the PE timestamp-derived short fingerprint (stable per build)
         _snwprintf_s(fingerprintBuffer,bufferChars,_TRUNCATE,L"%08X-%08X-%08X",stamp,image,check);
     }
     return ERROR_NOT_SUPPORTED;

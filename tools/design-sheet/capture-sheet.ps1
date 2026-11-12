@@ -1,9 +1,9 @@
 param(
-  [string]$SheetDir = 'E:\MouseBattery\design-sheet',
-  [string]$AppExe = 'E:\MouseBattery\app\MouseBattery.exe',
-  [string]$HostExe = 'E:\MouseBattery\design-sheet\bin\SheetHost.exe',
+  [string]$SheetDir = 'E:\Agent任务\进行中\MouseBattery\design-sheet',
+  [string]$AppExe = 'E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe',
+  [string]$HostExe = 'E:\Agent任务\进行中\MouseBattery\design-sheet\bin\SheetHost.exe',
   [string]$Cells = '',
-  [string]$StatusLog = 'E:\MouseBattery\app\data\status.txt',
+  [string]$StatusLog = 'E:\Agent任务\进行中\MouseBattery\app\data\status.txt',
   [switch]$KeepAppRunning
 )
 $ErrorActionPreference = 'Stop'

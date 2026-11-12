@@ -17,7 +17,7 @@ class SettingsSheet {
 
     [STAThread]
     static int Main(string[] args) {
-        string outDir = args.Length > 0 ? args[0] : @"E:\MouseBattery\design-sheet\settings";
+        string outDir = args.Length > 0 ? args[0] : @"E:\Agent任务\进行中\MouseBattery\design-sheet\settings";
         Directory.CreateDirectory(outDir);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);

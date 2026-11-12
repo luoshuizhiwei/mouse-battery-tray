@@ -1,4 +1,4 @@
-param([string]$Sheet = 'E:\MouseBattery\design-sheet\settings\sheet-S-dark.png')
+param([string]$Sheet = 'E:\Agent任务\进行中\MouseBattery\design-sheet\settings\sheet-S-dark.png')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $src = @'

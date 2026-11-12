@@ -14,6 +14,7 @@ class AppearanceProbe {
     }
     [STAThread] static int Main() {
         if(Process.GetProcessesByName("MouseBattery").Length!=0) throw new Exception("Stop the real reader before publishing simulated battery values");
+        var clock=Stopwatch.StartNew();
         using(var publisher=new TaskbarPublisher()) using(var host=new NativeHost()) {
             int[] values={0,9,10,20,21,86,100,100};
             for(int i=0;i<values.Length;i++) {
@@ -21,9 +22,10 @@ class AppearanceProbe {
                 var state=new DisplayState();
                 var mock=BatteryReading.Parse(new byte[]{(byte)value,4,0,0},"布局验证（模拟电量）","mock","2.4G");
                 mock.Path="hid#mock";
-                state.Apply(new[]{mock},0);
-                if(stale) state.MarkFailed(new[]{mock.Path},1);
-                publisher.MarkSuccess();publisher.Publish(state,1,0,false);
+                long now=clock.ElapsedMilliseconds;
+                state.Apply(new[]{mock},now);
+                if(stale) state.MarkFailed(new[]{mock.Path},now);
+                publisher.Publish(state,now,0,false);
                 host.Maintain();Thread.Sleep(2200);host.Maintain();
                 string status=host.Status;
                 if(!Regex.IsMatch(status,@"\bpercent="+value+@"\b") || !status.Contains("visible position=0") || !status.Contains("state="+(stale ? "2" : "1"))) throw new Exception("Wrong rendered value/state: "+status);

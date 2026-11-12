@@ -1,7 +1,7 @@
 param(
-  [string]$AppExe = 'E:\MouseBattery\app\MouseBattery.exe',
-  [string]$Probe = 'E:\MouseBattery\robust-v3.2\candidate-v411\AppearanceProbe.exe',
-  [string]$StatusLog = 'E:\MouseBattery\app\data\status.txt'
+  [string]$AppExe = 'E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe',
+  [string]$Probe = 'E:\Agent任务\进行中\MouseBattery\robust-v3.2\candidate-v411\AppearanceProbe.exe',
+  [string]$StatusLog = 'E:\Agent任务\进行中\MouseBattery\app\data\status.txt'
 )
 $ErrorActionPreference = 'Stop'
 $running = Get-Process MouseBattery -ErrorAction SilentlyContinue

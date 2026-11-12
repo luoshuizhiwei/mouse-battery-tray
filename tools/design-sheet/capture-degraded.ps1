@@ -1,8 +1,8 @@
 param(
-  [string]$Probe = 'E:\MouseBattery\robust-v3.2\degraded-probe-v420\DegradedProbe.exe',
-  [string]$AppExe = 'E:\MouseBattery\app\MouseBattery.exe',
-  [string]$OutDir = 'E:\MouseBattery\design-sheet\settings',
-  [string]$StatusLog = 'E:\MouseBattery\app\data\status.txt'
+  [string]$Probe = 'E:\Agent任务\进行中\MouseBattery\robust-v3.2\degraded-probe-v420\DegradedProbe.exe',
+  [string]$AppExe = 'E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe',
+  [string]$OutDir = 'E:\Agent任务\进行中\MouseBattery\design-sheet\settings',
+  [string]$StatusLog = 'E:\Agent任务\进行中\MouseBattery\app\data\status.txt'
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'

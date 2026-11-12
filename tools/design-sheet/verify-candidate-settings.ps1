@@ -1,7 +1,7 @@
 param(
-  [string]$Candidate = 'E:\MouseBattery\robust-v3.2\candidate-v411\MouseBattery.exe',
-  [string]$App = 'E:\MouseBattery\app\MouseBattery.exe',
-  [string]$OutDir = 'E:\MouseBattery\design-sheet\settings'
+  [string]$Candidate = 'E:\Agent任务\进行中\MouseBattery\robust-v3.2\candidate-v411\MouseBattery.exe',
+  [string]$App = 'E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe',
+  [string]$OutDir = 'E:\Agent任务\进行中\MouseBattery\design-sheet\settings'
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
@@ -54,6 +54,6 @@ finally {
   Stop-Resident $Candidate
   Start-Process $App -ArgumentList '--background' -WindowStyle Hidden
   Start-Sleep -Seconds 4
-  $tail = (Get-Content 'E:\MouseBattery\app\data\status.txt' -Tail 2) -join ' / '
+  $tail = (Get-Content 'E:\Agent任务\进行中\MouseBattery\app\data\status.txt' -Tail 2) -join ' / '
   Write-Output ('production restored: ' + $tail)
 }

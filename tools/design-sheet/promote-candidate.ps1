@@ -1,9 +1,9 @@
 param(
-  [string]$Candidate = 'E:\MouseBattery\robust-v3.2\candidate-v412\MouseBattery.exe',
-  [string]$AppExe = 'E:\MouseBattery\app\MouseBattery.exe',
-  [string]$BaselineDir = 'E:\MouseBattery\robust-v3.2\baseline',
+  [string]$Candidate = 'E:\Agent任务\进行中\MouseBattery\robust-v3.2\candidate-v412\MouseBattery.exe',
+  [string]$AppExe = 'E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe',
+  [string]$BaselineDir = 'E:\Agent任务\进行中\MouseBattery\robust-v3.2\baseline',
   [string]$ExpectedHash = 'E589774FEF79CF547EC5F47286A628924D95F87BF3FB035449CD22CA7AD3AE2F',
-  [string]$StatusLog = 'E:\MouseBattery\app\data\status.txt'
+  [string]$StatusLog = 'E:\Agent任务\进行中\MouseBattery\app\data\status.txt'
 )
 $ErrorActionPreference = 'Stop'
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Candidate).Hash
@@ -32,5 +32,5 @@ Start-Sleep -Seconds 7
 $running = @(Get-Process MouseBattery -ErrorAction SilentlyContinue).Count
 Write-Output ('resident processes: ' + $running)
 if (Test-Path $StatusLog) { Write-Output ((Get-Content -LiteralPath $StatusLog -Tail 8) -join "`n") }
-$components = Get-ChildItem 'E:\MouseBattery\app\components' -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$components = Get-ChildItem 'E:\Agent任务\进行中\MouseBattery\app\components' -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($components) { Write-Output ('newest component dir: ' + $components.Name) }
