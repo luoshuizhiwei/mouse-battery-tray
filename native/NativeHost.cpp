@@ -66,14 +66,29 @@ namespace {
 //   GetHost     = CTaskBand::GetTaskbarHost         @ 0x1237B0
 //   siteVtable  = CTaskBand ITaskListWndSite table @ 0x1CFA30
 bool InitializeProfile(); // defined below with the profile table
+static void WorkerDiag(wchar_t const* step) {
+    wchar_t exe[MAX_PATH];GetModuleFileNameW(nullptr,exe,MAX_PATH);
+    std::wstring path(exe);
+    size_t cut=path.find_last_of(L'\\');
+    std::wstring file=(cut==std::wstring::npos?path.substr(0,cut):path.substr(0,cut))+L"\data\native-worker.txt";
+    HANDLE f=CreateFileW(file.c_str(),FILE_APPEND_DATA,FILE_SHARE_READ,nullptr,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(f==INVALID_HANDLE_VALUE) return;
+    wchar_t line[256];
+    int n=_snwprintf_s(line,256,_TRUNCATE,L"[%llu] %s
+",(unsigned long long)GetTickCount64(),step);
+    DWORD w=0;WriteFile(f,line,(DWORD)(n*2),&w,nullptr);
+    CloseHandle(f);
+}
 DWORD WINAPI NativeWorker(void* parameter) {
     HMODULE self=(HMODULE)parameter;
     HANDLE waits[]={g_stop,g_ownerProcess};
+    WorkerDiag(L"worker-loop-start");
     while(WaitForMultipleObjects(2,waits,FALSE,500)==WAIT_TIMEOUT) {
         Work work; work.snapshot=Read();
         if(!Dispatch(work)) work.health=L"taskbar UI dispatch failed";
         SetHealth(L"LastLayout",work.health.c_str());
     }
+    WorkerDiag(L"worker-loop-exit");
     Work cleanup; cleanup.remove=true;
     if(!Dispatch(cleanup) && g_view) {
         // The old taskbar tree is already gone; do not release XAML on a worker.
@@ -92,9 +107,11 @@ DWORD WINAPI NativeWorker(void* parameter) {
 void StartInsideExplorer(DWORD owner) {
     std::lock_guard lock(g_lifecycle);
     if(g_started) return;
-    if(!OpenHealth()) return;
+    if(!OpenHealth()) {WorkerDiag(L"openhealth-failed");return;}
+    WorkerDiag(L"health-opened");
     g_health->owner=owner;SetHealth(L"InitState",L"starting");
-    if(!InitializeProfile()) return;
+    if(!InitializeProfile()) {WorkerDiag(L"profile-failed");return;}
+    WorkerDiag(L"profile-ok");
     g_ownerProcess=OpenProcess(SYNCHRONIZE|PROCESS_QUERY_LIMITED_INFORMATION,FALSE,owner);
     if(!g_ownerProcess) {SetHealth(L"InitState",L"cannot open owner process");return;}
     wchar_t path[32768];DWORD length=ARRAYSIZE(path);
@@ -111,6 +128,7 @@ void StartInsideExplorer(DWORD owner) {
         CloseHandle(g_stop);g_stop=nullptr;CloseHandle(g_ownerProcess);g_ownerProcess=nullptr;SetHealth(L"InitState",L"cannot retain native component");return;
     }
     g_started=true;
+    WorkerDiag(L"g_started-true");
     SetHealth(L"InitState",L"initialized");
     HANDLE thread=CreateThread(nullptr,0,NativeWorker,self,0,nullptr);
     if(!thread) {
