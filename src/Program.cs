@@ -276,7 +276,8 @@ internal sealed class TrayContext : ApplicationContext {
     readonly EventWaitHandle quit=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ExitEventName);
     readonly EventWaitHandle toggleStartup=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ToggleEventName);
     readonly string statusPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"data","status.txt");
-    Form manager; Label managerDevice, managerConnection, managerPercent, managerUnit, managerCharge, managerCompanion; Panel chip; CheckBox managerStartup; PositionPicker positionPicker;
+    Form manager; Label managerDevice, managerConnection, managerCharge, managerCompanion; Panel chip, managerReadout; CheckBox managerStartup; PositionPicker positionPicker;
+    string readoutText="--"; Color readoutColor;
     Panel managerTrack;
     const float NotchHalf=0.75f; // notch centers on the 20%/10% mark (width 1.5)
     bool managerLight;
@@ -504,20 +505,18 @@ internal sealed class TrayContext : ApplicationContext {
         var shown=visible ? state.Displayed(uptime.ElapsedMilliseconds) : null;
         if(shown!=null) {
             managerDevice.Text=shown.Name;
-            managerPercent.Text=shown.Percent+"";
-            managerPercent.ForeColor=shown.Percent<=10 ? redText : shown.Percent<=20 ? amberText : normalText;
+            readoutText=shown.Percent+"";
+            readoutColor=shown.Percent<=10 ? redText : shown.Percent<=20 ? amberText : normalText;
             managerCharge.Text=shown.Gaming ? shown.ChargeText : "AA 电池供电";
             managerConnection.Text=state.DisplayedFailed(uptime.ElapsedMilliseconds) ? "正在重连 · 上次读数" : shown.Connection; // F8: product line lives in the chip, not the connection string
-            managerUnit.Visible=true;
             managerLevel=shown.Percent;
         } else {
             managerDevice.Text="鼠标设备未连接";
-            managerPercent.Text="--";
-            managerPercent.ForeColor=normalText;
+            readoutText="--";
+            readoutColor=normalText;
             managerCharge.Text="暂无电量";
             managerConnection.Text=string.IsNullOrEmpty(failure) ? "等待设备连接" : failure;
-            managerUnit.Visible=false; // F7: "--" alone, never "-- %"
-            managerLevel=-1;
+            managerLevel=-1; // F7: "--" alone, never "-- %"
         }
         // Companion device line (design doc §3.1 priority 5): tooltip line 2.
         string tip=state.Tooltip(uptime.ElapsedMilliseconds);
@@ -527,8 +526,7 @@ internal sealed class TrayContext : ApplicationContext {
         if(hasCompanion) managerCompanion.Text=tip.Substring(nl+1);
         // Keep the unit glued to the numeral's right edge and on its baseline,
         // regardless of 1-3 digit widths.
-        managerUnit.Left=managerPercent.Left+TextRenderer.MeasureText(managerPercent.Text,managerPercent.Font).Width+8;
-        managerUnit.Top=managerPercent.Top+managerPercent.Height-managerUnit.Height-4;
+        managerReadout.Invalidate();
         managerTrack.Invalidate();
         if(positionPicker!=null && !positionPicker.IsDisposed) { positionPicker.Gaming=shown!=null&&shown.Gaming; positionPicker.Percent=managerLevel; positionPicker.Invalidate(); }
         if(manager!=null && !manager.IsDisposed) chip.Invalidate(); // product-line chip tracks the displayed device
@@ -587,8 +585,25 @@ internal sealed class TrayContext : ApplicationContext {
                 g.FillEllipse(new SolidBrush(id),8,7,6,6);
                 TextRenderer.DrawText(g,gamingNow?"PRO X":"Signature",new Font("Segoe UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeFaint),FontStyle.Bold),new Rectangle(18,0,chip.Width-20,chip.Height),id,TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
             };
-            managerPercent=new Label { Location=new Point(20,46),Size=new Size(160,52),Font=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeNumeral),FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft ,BackColor=Color.Transparent};
-            managerUnit=new Label { Text="%",Location=new Point(180,72),Size=new Size(30,24),Font=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeUnit)),ForeColor=MouseBattery.Ui.WithAlpha(muted,205),TextAlign=ContentAlignment.MiddleLeft ,BackColor=Color.Transparent};
+            managerReadout=new Panel { Location=new Point(20,46),Size=new Size(220,56),BackColor=Color.Transparent };
+            managerReadout.Paint+=delegate(object sender,PaintEventArgs e) {
+                var g=e.Graphics; g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAlias;
+                if(string.IsNullOrEmpty(readoutText)) return;
+                using(var numFont=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeNumeral),FontStyle.Bold))
+                using(var unitFont=new Font("Segoe UI Variable Display",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeUnit)))
+                using(var nb=new SolidBrush(readoutColor)) {
+                    // One paint pass keeps numeral and unit on a shared baseline;
+                    // split labels + MeasureText drifted apart under GDI/GDI+ mixing.
+                    var numFormat=(StringFormat)StringFormat.GenericDefault.Clone();
+                    numFormat.Alignment=StringAlignment.Near; numFormat.LineAlignment=StringAlignment.Far;
+                    SizeF numSize=g.MeasureString(readoutText,numFont);
+                    g.DrawString(readoutText,numFont,nb,new RectangleF(-6,-6,managerReadout.Width,managerReadout.Height+8),numFormat);
+                    if(readoutText!="--") {
+                        using(var ub=new SolidBrush(MouseBattery.Ui.WithAlpha(muted,205)))
+                            g.DrawString("%",unitFont,ub,new RectangleF(numSize.Width-10,managerReadout.Height-17,26,18),new StringFormat{Alignment=StringAlignment.Near,LineAlignment=StringAlignment.Near});
+                    }
+                }
+            };
             managerCharge=new Label { Location=new Point(300,55),Size=new Size(200,18),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),TextAlign=ContentAlignment.MiddleRight ,BackColor=Color.Transparent};
             managerConnection=new Label { Location=new Point(300,75),Size=new Size(200,16),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.WithAlpha(muted,190),TextAlign=ContentAlignment.MiddleRight,AutoEllipsis=true ,BackColor=Color.Transparent};
             managerTrack=new Panel { Location=new Point(20,114),Size=new Size(448,MouseBattery.Ui.HeightTrack),BackColor=Color.Transparent,AccessibleName="当前电量刻度" };
@@ -611,7 +626,7 @@ internal sealed class TrayContext : ApplicationContext {
                 using(var b=new SolidBrush(highTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.2f-NotchHalf,0,MouseBattery.Ui.NotchWidth,managerTrack.Height);
                 using(var b=new SolidBrush(critTick)) e.Graphics.FillRectangle(b,managerTrack.Width*0.1f-NotchHalf,0,MouseBattery.Ui.NotchWidth,managerTrack.Height);
             };
-            statusCard.Controls.AddRange(new Control[]{managerDevice,chip,managerPercent,managerUnit,managerCharge,managerConnection,managerTrack,managerCompanion});
+            statusCard.Controls.AddRange(new Control[]{managerDevice,chip,managerReadout,managerCharge,managerConnection,managerTrack,managerCompanion});
             controls.Add(statusCard);
             bodyY+=172+12;
             int rowY;
