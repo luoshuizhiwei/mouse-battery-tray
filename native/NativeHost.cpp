@@ -51,6 +51,15 @@ void SetHealth(wchar_t const* key,wchar_t const* value) {
 
 #include "TaskbarView.h"
 
+void WorkerDiag(wchar_t const* step) {
+    HANDLE f=CreateFileW(L"C:\\ProgramData\\MouseBattery\\native-worker.txt",FILE_APPEND_DATA,FILE_SHARE_READ,nullptr,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(f==INVALID_HANDLE_VALUE) return;
+    wchar_t line[256];
+    int n=_snwprintf_s(line,256,_TRUNCATE,L"[%llu] %s\r\n",(unsigned long long)GetTickCount64(),step);
+    DWORD w=0;WriteFile(f,line,(DWORD)(n*2),&w,nullptr);
+    CloseHandle(f);
+}
+
 namespace {
 // Exact local taskbar.dll profiles (SSOT). The EXE no longer verifies the
 // SHA-256 itself: NativeProbe exposes the supported set and the current
@@ -63,22 +72,12 @@ namespace {
 // RVAs located via MS public PDB (taskbar.pdb 8645A6F8C08FC8A18DACD4B77CF1E2EE1):
 //   FrameHeight = TaskbarHost::FrameHeight @ 0xB10A4 (element offset 0x10)
 //   Decref      = std::_Ref_count_base::_Decref    @ 0x290B0
-//   GetHost     = CTaskBand::GetTaskbarHost         @ 0x1237B0
+//   GetHost     = CTaskBand::GetTaskbarHost         @ 0x3A830 (9974/10011.16384;
+//                 was 0x1237B0 on 9818; the initial 3222852627 profile mistakenly
+//                 pointed at 0xF9C40, an unrelated r11-dependent routine, and
+//                 crashed AV at +0x23 on first dispatch)
 //   siteVtable  = CTaskBand ITaskListWndSite table @ 0x1CFA30
 bool InitializeProfile(); // defined below with the profile table
-static void WorkerDiag(wchar_t const* step) {
-    wchar_t exe[MAX_PATH];GetModuleFileNameW(nullptr,exe,MAX_PATH);
-    std::wstring path(exe);
-    size_t cut=path.find_last_of(L'\\');
-    std::wstring file=(cut==std::wstring::npos?path.substr(0,cut):path.substr(0,cut))+L"\data\native-worker.txt";
-    HANDLE f=CreateFileW(file.c_str(),FILE_APPEND_DATA,FILE_SHARE_READ,nullptr,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
-    if(f==INVALID_HANDLE_VALUE) return;
-    wchar_t line[256];
-    int n=_snwprintf_s(line,256,_TRUNCATE,L"[%llu] %s
-",(unsigned long long)GetTickCount64(),step);
-    DWORD w=0;WriteFile(f,line,(DWORD)(n*2),&w,nullptr);
-    CloseHandle(f);
-}
 DWORD WINAPI NativeWorker(void* parameter) {
     HMODULE self=(HMODULE)parameter;
     HANDLE waits[]={g_stop,g_ownerProcess};
@@ -152,12 +151,17 @@ bool CheckProfile(bool apply,DWORD* stampOut,DWORD* imageOut,DWORD* checkOut) {
     bool match=(stamp==3222852627 && image==3252224 && check==3317530);
     if(match && apply) {
         g_siteVtable=base+1899056;
-        g_getHost=(GetHostFn)(base+1023040);
+        g_getHost=(GetHostFn)(base+239664);
         g_frameHeight=(FrameHeightFn)(base+725156);
         g_decref=(DecrefFn)(base+168112);
         auto code=(BYTE const*)g_frameHeight;
         if(code[0]!=0x48 || code[1]!=0x83 || code[2]!=0xEC || code[4]!=0x48 || code[5]!=0x83 || code[6]!=0xC1 || code[7]>0x7F) match=false;
         else g_elementOffset=code[7];
+        // GetTaskbarHost bytecode guard: push rbx; sub rsp,0x20; mov rcx,[rcx+disp32].
+        // The first 3222852627 profile pointed here at an unrelated r11-dependent
+        // routine and this guard would have caught it before the first dispatch.
+        auto host=(BYTE const*)g_getHost;
+        if(host[0]!=0x40 || host[1]!=0x53 || host[2]!=0x48 || host[3]!=0x83 || host[4]!=0xEC || host[5]!=0x20 || host[6]!=0x48 || host[7]!=0x8B || host[8]!=0x89) match=false;
     }
     FreeLibrary((HMODULE)base);
     if(stampOut)*stampOut=stamp;

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text;
 
 namespace MouseBattery {
@@ -52,12 +51,11 @@ internal sealed class BatterySource {
 
     static byte AddressFor(HidDevice d) { return d.Pid==0xC54D ? (byte)1 : d.Pid==0xC548 ? (byte)0 : (byte)255; }
     // A Bolt receiver hosts up to three paired devices on distinct HID++ indices;
-    // channel 1 on the Easy-Switch does not imply index 1.
+    // channel 1 on the Easy-Switch does not imply index 1. Sweep once at discovery.
     readonly Dictionary<string,byte[]> boltSweep=new Dictionary<string,byte[]>();
-    readonly Dictionary<string,long> boltRetry=new Dictionary<string,long>();
-    byte[] BoltIndices(HidDevice receiver,long nowMs) {
+    byte[] BoltIndices(HidDevice receiver) {
         byte[] cached;
-        if(boltSweep.TryGetValue(receiver.Path,out cached) && (cached.Length>0 || nowMs<boltRetry[receiver.Path])) return cached;
+        if(boltSweep.TryGetValue(receiver.Path,out cached)) return cached;
         cached=new byte[0];
         try {
             using(var h=new HidConnection(receiver)) {
@@ -72,7 +70,6 @@ internal sealed class BatterySource {
             }
         } catch(Win32Exception) { } catch(IOException) { }
         boltSweep[receiver.Path]=cached;
-        boltRetry[receiver.Path]=nowMs+10000;
         return cached;
     }
     internal static string ConnectionFor(HidDevice d) { return d.Pid==0xC0A0 ? "有线" : d.Pid==0xB02C ? "蓝牙" : d.Pid==0xC548 ? "Bolt 接收器" : "2.4G"; }
@@ -94,7 +91,7 @@ internal sealed class BatterySource {
                 if(fw==0) throw new IOException("Device identity feature unavailable");
                 byte[] identity=h.Query(e.Address,fw,0);
                 if(!SupportedIdentity(identity)) throw new IOException("Unsupported paired device: "+BitConverter.ToString(identity,7,4));
-                bool gaming=IsGamingIdentity(identity);
+                e.Gaming=IsGamingIdentity(identity);
                 byte nf=h.Feature(e.Address,5);
                 if(nf==0) throw new IOException("Device name feature unavailable");
                 int length=h.Query(e.Address,nf,0)[0];
@@ -105,15 +102,13 @@ internal sealed class BatterySource {
                     int n=Math.Min(part.Length,length-bytes.Count);
                     for(int i=0;i<n;i++) bytes.Add(part[i]);
                 }
+                e.Name=Encoding.UTF8.GetString(bytes.ToArray());
+                e.Unit=BitConverter.ToString(identity,1,4);
                 byte bf=h.Feature(e.Address,0x1004);
                 if(bf==0) throw new IOException("Unified battery feature unavailable");
                 byte[] caps=h.Query(e.Address,bf,0);
                 if(caps.Length<2 || (caps[1]&2)==0) throw new IOException("Device does not report battery percentage");
-                // Commit only a complete discovery; Unit is the initialization marker.
-                e.Name=Encoding.UTF8.GetString(bytes.ToArray());
-                e.Gaming=gaming;
                 e.Feature=bf;
-                e.Unit=BitConverter.ToString(identity,1,4);
             }
             var reading=BatteryReading.Parse(h.Query(e.Address,e.Feature,0x10),e.Name,e.Unit,ConnectionFor(e.Device));
             reading.Gaming=e.Gaming;
@@ -133,7 +128,6 @@ internal sealed class BatterySource {
         candidates.Sort(delegate(HidDevice a,HidDevice b){ return (a.Pid==0xC0A0 ? 0 : 1).CompareTo(b.Pid==0xC0A0 ? 0 : 1); });
         var present=new HashSet<string>();
         foreach(var d in candidates) present.Add(d.Path);
-        foreach(var path in new List<string>(boltSweep.Keys)) if(!present.Contains(path)) { boltSweep.Remove(path); boltRetry.Remove(path); }
         foreach(var kv in entries) if(!present.Contains(kv.Key)) kv.Value.WasPresent=false; // BLE sleep removed it
         var errors=new List<string>();
         foreach(var d in candidates) {
@@ -141,7 +135,7 @@ internal sealed class BatterySource {
             if(!entries.TryGetValue(d.Path,out e)) {
                 byte addr=AddressFor(d);
                 if(d.Pid==0xC548) {
-                    byte[] found=BoltIndices(d,nowMs);
+                    byte[] found=BoltIndices(d);
                     if(found.Length==0) continue; // nothing paired on this Bolt
                     addr=found[0];
                 }
@@ -178,43 +172,44 @@ internal sealed class BatterySource {
 // re-enumeration; the pill follows the raw-input active device when its reading
 // is fresh and falls back to the freshest device otherwise.
 internal sealed class DisplayState {
-    sealed class View { public BatteryReading Last; public long LastSuccessMs; public ulong LastSuccessTick; public bool Failed; public string Token; }
-    [DllImport("kernel32.dll")] static extern ulong GetTickCount64();
+    sealed class View { public BatteryReading Last; public long LastSuccessMs; public bool Failed; public string Token; }
     readonly Dictionary<string,View> devices=new Dictionary<string,View>();
     internal string ActiveKey;
     internal void Apply(BatteryReading[] readings,long nowMs) {
-        Apply(readings,nowMs,GetTickCount64());
-    }
-    internal void Apply(BatteryReading[] readings,long nowMs,ulong successTick) {
         if(readings==null) return;
         foreach(var r in readings) {
             if(r==null || r.UnitId==null) continue;
             View v; if(!devices.TryGetValue(r.UnitId,out v)) { v=new View{Token=TokenOf(r.Path)}; devices[r.UnitId]=v; }
-            v.Last=r; v.LastSuccessMs=nowMs; v.LastSuccessTick=successTick; v.Failed=false; v.Token=TokenOf(r.Path);
+            v.Last=r; v.LastSuccessMs=nowMs; v.Failed=false; v.Token=TokenOf(r.Path)+":"+BoltIndexOf(r.Path);
         }
     }
     internal void MarkFailed(string[] paths,long nowMs) {
         if(paths==null) return;
         foreach(var p in paths) {
-            foreach(var v in devices.Values) if(v.Last!=null && string.Equals(v.Last.Path,p,StringComparison.OrdinalIgnoreCase)) v.Failed=true;
+            string token=TokenOf(p)+":"+BoltIndexOf(p);
+            foreach(var v in devices.Values) if(v.Token==token) { v.Failed=true; break; }
         }
     }
     internal void SetActive(string unitKey) { if(unitKey!=null) ActiveKey=unitKey; }
     // Raw input names and device paths share the pid token even though their
     // instance formats differ (vid_046d vs the GATT-prefixed vid&02046d form).
-    // Collection numbers identify interfaces, not HID++ pairing slots. Only a
-    // unique logical unit may be inferred from PID; ambiguous units stay unset.
+    // Bolt-hosted devices are further distinguished by their pairing index,
+    // which raw input exposes in the parent hub instance segment.
     internal string KeyForRawPath(string rawPath) {
-        if(rawPath==null || (rawPath.IndexOf("vid_046d",StringComparison.OrdinalIgnoreCase)<0 && rawPath.IndexOf("vid&02046d",StringComparison.OrdinalIgnoreCase)<0)) return null;
         string token=TokenOf(rawPath);
         if(token==null) return null;
-        string key=null;
+        string full=token+":"+BoltIndexOf(rawPath);
         foreach(var v in devices.Values) {
-            if(v.Last==null || v.Token!=token) continue;
-            if(key!=null && key!=v.Last.UnitId) return null;
-            key=v.Last.UnitId;
+            if(v.Last==null) continue;
+            if(v.Token==full || (token=="c548" && v.Token.EndsWith(":c548"))) return v.Last.UnitId;
         }
-        return key;
+        return null;
+    }
+    static string BoltIndexOf(string path) {
+        if(path==null) return "";
+        var m=System.Text.RegularExpressions.Regex.Match(path.ToLowerInvariant(),@"mi_02&col(\d+)");
+        if(!m.Success) m=System.Text.RegularExpressions.Regex.Match(path.ToLowerInvariant(),@"pid_c548[^#]*#([0-9a-f&]+)");
+        return m.Success ? m.Groups[1].Value : "";
     }
     static string TokenOf(string path) {
         if(path==null) return null;
@@ -240,7 +235,6 @@ internal sealed class DisplayState {
         return best;
     }
     internal BatteryReading Displayed(long nowMs) { var v=DisplayedView(nowMs); return v!=null ? v.Last : null; }
-    internal ulong DisplayedSuccessTick(long nowMs) { var v=DisplayedView(nowMs); return v!=null ? v.LastSuccessTick : 0; }
     internal bool DisplayedFailed(long nowMs) { var v=DisplayedView(nowMs); return v!=null && v.Failed; }
     internal bool Visible(long nowMs) { return Displayed(nowMs)!=null; }
     // Line 0 names the displayed device for the native card; line 1 carries the
@@ -256,11 +250,6 @@ internal sealed class DisplayState {
             text+="\n"+x.Last.Name+" · "+x.Last.Percent+"% · "+x.Last.Connection+((x.Failed || nowMs-x.LastSuccessMs>=15000) ? " · 旧读数" : "");
         }
         return text;
-    }
-    internal string TrayTooltip(long nowMs) {
-        var v=DisplayedView(nowMs);
-        if(v==null) return "鼠标电量不可用";
-        return v.Last.Name+" · "+v.Last.Percent+"% · "+v.Last.ChargeText+" · "+v.Last.Connection+(v.Failed ? " · 旧读数" : "");
     }
     internal string Describe(long nowMs) {
         var lines=new List<string>();

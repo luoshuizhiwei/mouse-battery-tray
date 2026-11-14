@@ -1,6 +1,15 @@
 // Native XAML view, adapted from the v2.1 display module.
 // No third-party runtime host or engine API. See THIRD-PARTY-NOTICES.md.
+void WorkerDiag(wchar_t const*); // defined in NativeHost.cpp; dispatch-chain diagnostics
 #include <windows.h>
+static bool ReadableAddr(const void* p,SIZE_T n) {
+    MEMORY_BASIC_INFORMATION mbi{};
+    if(!VirtualQuery(p,&mbi,sizeof(mbi))) return false;
+    if(mbi.State!=MEM_COMMIT) return false;
+    DWORD protect=mbi.Protect&0xFF;
+    if(protect==PAGE_NOACCESS || (mbi.Protect&PAGE_GUARD)) return false;
+    return (uintptr_t)p+n <= (uintptr_t)mbi.BaseAddress+mbi.RegionSize;
+}
 #undef GetCurrentTime
 #include <winrt/base.h>
 #include <winrt/Windows.Foundation.h>
@@ -138,18 +147,47 @@ FrameworkElement Find(FrameworkElement const& root,wchar_t const* name) {
 
 XamlRoot TaskbarRoot(HWND window) {
     HWND bandWindow=(HWND)GetPropW(window,L"TaskbandHWND");
-    if(!bandWindow) return nullptr;
+    if(!bandWindow) {WorkerDiag(L"tb-root-no-band");return nullptr;}
     auto band=(void**)GetWindowLongPtrW(bandWindow,0);
-    if(!band) return nullptr;
-    void** site=nullptr;
-    for(int i=0;i<=20;i++) if(band[i]==g_siteVtable) {site=band+i;break;}
-    if(!site) return nullptr;
-    void* host[2]{}; g_getHost(site,host);
-    if(!host[0] || !host[1]) {if(host[1])g_decref(host[1]);return nullptr;}
-    auto unknown=*(IUnknown**)((BYTE*)host[0]+g_elementOffset);
+    if(!band) {WorkerDiag(L"tb-root-no-bandptr");return nullptr;}
+    void** site=nullptr; int hitIndex=-1;
+    for(int i=0;i<=20;i++) if(band[i]==g_siteVtable) {site=band+i;hitIndex=i;break;}
+    if(!site) {WorkerDiag(L"tb-root-no-site");return nullptr;}
+    // 9974/10011.16384: GetTaskbarHost's virtual helper returns stale offsets
+    // (out[0]=TaskbarHost+0x278 read back as the scalar 3). The probe verified
+    // the real chain by shape: site+0x1E8 = the TaskbarHost object;
+    // TaskbarHost+0x278 = the XamlHost container; container+0x10 = the XamlRoot
+    // element whose vtable lives in Windows.UI.Xaml.dll. Read that chain
+    // directly; if the offsets ever drift again, re-locate the container by
+    // scanning TaskbarHost for the same shape instead of trusting one number.
+    void* taskbarHost=*(void**)((BYTE*)site+0x1E8);
+    if(!taskbarHost || !ReadableAddr(taskbarHost,8)) {WorkerDiag(L"tb-root-no-th");return nullptr;}
+    auto containerLooksValid=[&](void* c)->bool {
+        if(!c || !ReadableAddr(c,0x18)) return false;
+        void* u=*(void**)((BYTE*)c+g_elementOffset);
+        if(!u || !ReadableAddr(u,8)) return false;
+        uintptr_t vt=*(uintptr_t*)u;
+        if(vt<0x10000 || vt>0x7FFFFFFEFFFF) return false;
+        HMODULE mod=nullptr;
+        if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,(PCWSTR)vt,&mod)) return false;
+        wchar_t path[260];
+        if(!GetModuleFileNameW(mod,path,260)) return false;
+        wchar_t* slash=wcsrchr(path,L'\\');
+        return _wcsicmp(slash?slash+1:path,L"Windows.UI.Xaml.dll")==0;
+    };
+    void* container=*(void**)((BYTE*)taskbarHost+0x278);
+    if(!containerLooksValid(container)) {
+        container=nullptr;
+        for(int off=0x200;off<0x380;off+=8) {
+            if(!ReadableAddr((BYTE*)taskbarHost+off,8)) continue;
+            void* p=*(void**)((BYTE*)taskbarHost+off);
+            if(containerLooksValid(p)) {container=p;break;}
+        }
+        if(!container) {WorkerDiag(L"tb-root-no-container");return nullptr;}
+    }
+    auto unknown=*(IUnknown**)((BYTE*)container+g_elementOffset);
     FrameworkElement element{nullptr};
     if(unknown) unknown->QueryInterface(guid_of<FrameworkElement>(),put_abi(element));
-    g_decref(host[1]);
     return element ? element.XamlRoot() : nullptr;
 }
 
@@ -340,9 +378,15 @@ void Update(Work& work) {
     }
     auto& s=work.snapshot;
     auto root=TaskbarRoot(TaskbarWindow());
+    WorkerDiag(root?L"root-ok":L"root-null");
     if(!root) {NativeLog(L"Taskbar XamlRoot not ready");work.health=L"XamlRoot unavailable";return;}
     if(g_view && (g_view->position!=s.position || g_view->host.XamlRoot()!=root)) Remove();
-    if(!g_view && !Insert(root.Content().as<FrameworkElement>(),s.position)) {work.health=L"placement unavailable";return;}
+    if(!g_view) {
+        WorkerDiag(L"insert-before");
+        bool inserted=Insert(root.Content().as<FrameworkElement>(),s.position);
+        WorkerDiag(inserted?L"insert-ok":L"insert-fail");
+        if(!inserted) {work.health=L"placement unavailable";return;}
+    }
     auto& v=*g_view;
     if(s.position==3) v.column.Width({ExternalLeftWidth()+56,GridUnitType::Pixel});
     v.text.Text(std::to_wstring(s.percent));
@@ -491,20 +535,30 @@ bool Dispatch(Work& work) {
 
 Snapshot Read() {
     Snapshot result{};
+    static std::atomic<bool> failureLogged{false}; // log only the first failure; steady failure must not flood the file
     // Do NOT cache the mapping: after an app restart or Windows update the
     // publisher may recreate the named object, and a cached view would keep
     // reading a stale (hours-old) snapshot forever. Open/mapping/close each
     // dispatch - cheap (500ms cadence) and always bound to the live object.
-    HANDLE map=OpenFileMappingW(FILE_MAP_READ,FALSE,L"Local\\MouseBatteryTaskbar.v2");
-    if(!map) return result;
+    HANDLE map=OpenFileMappingW(FILE_MAP_READ,FALSE,L"Local\\MouseBatteryTaskbar.v3");
+    if(!map) {if(!failureLogged.exchange(true)) WorkerDiag(L"read-map-open-failed");return result;}
     auto data=(Snapshot const*)MapViewOfFile(map,FILE_MAP_READ,0,0,sizeof(Snapshot));
-    if(!data) {CloseHandle(map);return result;}
+    if(!data) {CloseHandle(map);if(!failureLogged.exchange(true)) WorkerDiag(L"read-view-map-failed");return result;}
     uint32_t before=((Snapshot volatile const*)data)->sequence;
-    if(before&1) {UnmapViewOfFile(data);CloseHandle(map);return result;}
+    if(before&1) {UnmapViewOfFile(data);CloseHandle(map);if(!failureLogged.exchange(true)) WorkerDiag(L"read-seq-odd");return result;}
     MemoryBarrier(); std::memcpy(&result,data,sizeof(result)); MemoryBarrier();
     uint32_t after=((Snapshot volatile const*)data)->sequence;
     UnmapViewOfFile(data);CloseHandle(map);
-    if(before!=after || result.magic!=0x3254424D || result.percent<0 || result.percent>100 || result.state<0 || result.state>2 || result.position<0 || result.position>3 || GetTickCount64()-result.tick>=15000) result.state=0;
+    if(before!=after || result.magic!=0x3254424D || result.percent<0 || result.percent>100 || result.state<0 || result.state>2 || result.position<0 || result.position>3 || GetTickCount64()-result.tick>=15000) {
+        result.state=0;
+        static std::atomic<long long> lastDump{0}; // dump what the worker actually sees, throttled
+        auto now=GetTickCount64();
+        if(now-lastDump.exchange((long long)now)>20000) {
+            wchar_t b[192];
+            _snwprintf_s(b,192,_TRUNCATE,L"read-check-fail ba=%u/%u mg=%u st=%d pct=%d tick=%llu",(unsigned)before,(unsigned)after,(unsigned)result.magic,(int)result.state,(int)result.percent,(unsigned long long)result.tick);
+            WorkerDiag(b);
+        }
+    }
     result.tooltip[215]=0;
     if(result.themeOverride<0 || result.themeOverride>2) result.themeOverride=0;
     return result;

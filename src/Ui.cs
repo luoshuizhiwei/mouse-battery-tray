@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 
 namespace MouseBattery {
 // Catppuccin design tokens - single source of truth for all managed layers.
@@ -51,17 +51,6 @@ internal static class Ui {
     // identity = product-line color resolved by device kind
     internal static Color Identity(bool gaming,bool light) { return gaming?Mauve(light):Sapphire(light); }
     internal static Color OnAccent(bool light) { return light?SurfaceLight:BaseDark; }
-    // Settings-only soft palette. Keep native/tray colors and warning roles intact.
-    internal static Color SettingsBase(bool light) { return light?Color.FromArgb(242,244,247):Color.FromArgb(37,44,54); }
-    internal static Color SettingsSurface(bool light) { return light?Color.FromArgb(250,251,253):Color.FromArgb(48,58,70); }
-    internal static Color SettingsText(bool light) { return light?Color.FromArgb(69,78,86):Color.FromArgb(213,222,232); }
-    internal static Color SettingsSubtext(bool light) { return light?Color.FromArgb(99,112,127):Color.FromArgb(170,184,200); }
-    internal static Color SettingsBorder(bool light) { return light?Color.FromArgb(211,219,229):Color.FromArgb(69,82,96); }
-    internal static Color SettingsAccent(bool light) { return light?Color.FromArgb(126,148,171):Color.FromArgb(167,187,204); }
-    internal static Color SettingsAccentInk(bool light) { return light?Color.FromArgb(64,91,114):Color.FromArgb(210,224,235); }
-    internal static Color SettingsAction(bool light) { return light?Color.FromArgb(220,229,239):Color.FromArgb(66,86,106); }
-    internal static Color SettingsActionHover(bool light) { return Overlay(SettingsAction(light),255,WithAlpha(SettingsAccentInk(light),20)); }
-    internal static Color SettingsHover(bool light) { return Overlay(SettingsBase(light),255,WithAlpha(SettingsText(light),14)); }
     // Legacy shims kept while call sites migrate to the named role helpers.
     internal static Color GetColor(bool lightMode,Color light,Color dark) { return lightMode?light:dark; }
     internal static Color GetSurfaceColor(bool lightMode) { return Surface(lightMode); }
@@ -92,8 +81,8 @@ internal static class Ui {
     internal const int WidthCardNative=240;      // hover card
     internal const int WidthContentNative=200;   // hover card content column (1% = 2 DIP)
     internal const int WidthWindow=560;
-    internal const int HeightWindowNormal=608;
-    internal const int HeightWindowDegraded=512;
+    internal const int HeightWindowNormal=524;
+    internal const int HeightWindowDegraded=426;
     internal const int WidthCardWindow=520;
     internal const int WidthCardContent=480;     // 1% = 4.8 DIP
     internal const int HeightTrack=6;
