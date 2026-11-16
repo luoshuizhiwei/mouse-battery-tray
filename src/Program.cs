@@ -80,12 +80,21 @@ internal sealed class PositionPicker : Control {
     float PaintScale() { return (float)Width/BarWidth; } // control is manager.Scale-d; artwork is not
     int position,hover=-1,percent=-1;
     bool light=true,gaming=false,pressed=false;
+    string clockMinute="";
+    readonly System.Windows.Forms.Timer clockTimer=new System.Windows.Forms.Timer();
     internal event Action PositionChanged;
     public PositionPicker() {
         SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint|ControlStyles.ResizeRedraw|ControlStyles.SupportsTransparentBackColor,true);
         BackColor=Color.Transparent; TabStop=true; Cursor=Cursors.Hand;
         AccessibleName="任务栏显示位置";
         AccessibleDescription="迷你任务栏示意图：点击四个落点，或用左右方向键切换电量显示位置";
+        clockTimer.Interval=15000;
+        clockTimer.Tick+=delegate { if(DateTime.Now.ToString("HH:mm")!=clockMinute) Invalidate(); };
+        clockTimer.Start();
+    }
+    protected override void Dispose(bool disposing) {
+        if(disposing) clockTimer.Dispose();
+        base.Dispose(disposing);
     }
     internal static System.Drawing.Drawing2D.GraphicsPath RoundPath(RectangleF bounds,float radius) {
         var path=new System.Drawing.Drawing2D.GraphicsPath();
@@ -115,7 +124,7 @@ internal sealed class PositionPicker : Control {
     protected override void OnPaint(PaintEventArgs e) {
         var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         g.ScaleTransform(PaintScale(),PaintScale());
-        Color baseColor=Ui.Base(light),border=Ui.Border(light),surface=Ui.Surface(light),text=Ui.Text(light),muted=Ui.Subtext(light),accent=Ui.Accent(light);
+        Color baseColor=Ui.Base(light),border=Ui.Border(light),text=Ui.Text(light),muted=Ui.Subtext(light),accent=Ui.Accent(light);
         Color identity=Ui.Identity(gaming,light);
         Color barFill=Mix(baseColor,border,120);
         var bar=new RectangleF(0,0,BandWidth,BarHeight);
@@ -123,23 +132,54 @@ internal sealed class PositionPicker : Control {
             using(var b=new SolidBrush(barFill)) g.FillPath(b,path);
             using(var p=new Pen(Ui.WithAlpha(border,190))) g.DrawPath(p,path);
         }
-        // Dark: Surface α180 composes to within one RGB step of the bar fill,
-        // so the placeholder icons need a Text-tinted step to stay visible.
-        Color blockColor=light?Ui.WithAlpha(surface,180):Mix(barFill,text,26);
-        using(var b=new SolidBrush(blockColor)) {
-            for(int i=0;i<6;i++) using(var path=RoundPath(new RectangleF(60+i*24,12,20,16),3)) g.FillPath(b,path);
-            for(int i=0;i<3;i++) using(var path=RoundPath(new RectangleF(248+i*20,14,12,12),2)) g.FillPath(b,path);
-            using(var path=RoundPath(new RectangleF(352,10,32,20),5)) g.FillPath(b,path);
+        // A recognizable taskbar, not a skeleton row: start mark, search, app
+        // and tray glyphs, live clock, show-desktop sliver. Artwork stays clear
+        // of the four zones so a drawn element never covers a click target.
+        Color ink=Ui.WithAlpha(muted,200);
+        using(var b=new SolidBrush(accent)) {
+            using(var p1=RoundPath(new RectangleF(60,11,8,8),2)) g.FillPath(b,p1);
+            using(var p2=RoundPath(new RectangleF(70,11,8,8),2)) g.FillPath(b,p2);
+            using(var p3=RoundPath(new RectangleF(60,21,8,8),2)) g.FillPath(b,p3);
+            using(var p4=RoundPath(new RectangleF(70,21,8,8),2)) g.FillPath(b,p4);
         }
+        using(var pen=new Pen(ink,1.5f)) {
+            g.DrawEllipse(pen,90,13,11,11); g.DrawLine(pen,99,22,104,27);
+            using(var p=RoundPath(new RectangleF(112,14,18,13),2)) g.DrawPath(pen,p);
+            g.DrawLine(pen,112,18,130,18);
+            g.DrawEllipse(pen,140,13,14,14); g.DrawLine(pen,140,20,154,20); g.DrawEllipse(pen,144,13,6,14);
+            using(var p=RoundPath(new RectangleF(164,13,16,12),3)) g.DrawPath(pen,p);
+            g.DrawLine(pen,168,25,166,28); g.DrawLine(pen,166,28,172,25);
+            g.DrawLine(pen,246,22,251,17); g.DrawLine(pen,251,17,256,22);
+            g.DrawArc(pen,260,17,14,14,225,90); g.DrawArc(pen,263,20,8,8,225,90);
+            g.DrawLine(pen,276,18,279,18); g.DrawLine(pen,279,18,283,14); g.DrawLine(pen,283,14,283,26);
+            g.DrawLine(pen,283,26,279,22); g.DrawLine(pen,279,22,276,22); g.DrawLine(pen,276,22,276,18);
+            g.DrawArc(pen,285,16,6,8,300,120);
+        }
+        using(var b=new SolidBrush(ink)) g.FillEllipse(b,266,24,2.5f,2.5f);
+        using(var b=new SolidBrush(Ui.WithAlpha(border,190))) g.FillRectangle(b,428,12,2,16);
+        g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAlias;
+        var right=(StringFormat)StringFormat.GenericTypographic.Clone();
+        right.Alignment=StringAlignment.Far; right.LineAlignment=StringAlignment.Center;
+        clockMinute=DateTime.Now.ToString("HH:mm");
+        using(var font=new Font(Font.FontFamily,10f,FontStyle.Regular,GraphicsUnit.Pixel))
+        using(var b=new SolidBrush(ink)) g.DrawString(clockMinute,font,b,new RectangleF(346,6,44,13),right);
+        using(var font=new Font(Font.FontFamily,8.5f,FontStyle.Regular,GraphicsUnit.Pixel))
+        using(var b=new SolidBrush(Ui.WithAlpha(muted,160))) g.DrawString(DateTime.Now.ToString("MM/dd"),font,b,new RectangleF(346,19,44,12),right);
         var zones=Zones();
         for(int i=0;i<4;i++) {
             if(i==position) continue;
             var slot=zones[i];
-            var ghost=new RectangleF(slot.X+(slot.Width-20)/2f,10,20,20);
+            // Unselected slots mirror the pill's own shape, dashed: the user
+            // sees where the pill can move, not anonymous ghost squares.
+            float sw=Math.Min(52,slot.Width-8),sh=24;
+            var ghost=new RectangleF(slot.X+(slot.Width-sw)/2f,(BarHeight-sh)/2f,sw,sh);
             bool isHover=hover==i;
-            using(var path=RoundPath(ghost,6)) {
+            using(var path=RoundPath(ghost,8)) {
                 if(isHover) using(var b=new SolidBrush(Ui.WithAlpha(identity,pressed?62:34))) g.FillPath(b,path);
-                using(var p=new Pen(isHover?Ui.WithAlpha(identity,210):Ui.WithAlpha(border,165))) g.DrawPath(p,path);
+                using(var p=new Pen(isHover?Ui.WithAlpha(identity,210):Ui.WithAlpha(muted,150),1)) {
+                    if(!isHover) { p.DashStyle=System.Drawing.Drawing2D.DashStyle.Custom; p.DashPattern=new float[]{3,3}; }
+                    g.DrawPath(p,path);
+                }
             }
         }
         var sel=zones[position];
@@ -342,7 +382,7 @@ internal sealed class TrayContext : ApplicationContext {
     string readoutText="--"; Color readoutColor;
     int chipDesignWidth=120; string chipKey;
     Panel managerTrack;
-    const float NotchHalf=0.75f; // notch centers on the 20%/10% mark (width 1.5)
+    const float NotchHalf=1f; // notch centers on the 20%/10% mark (width 2)
     bool managerLight;
     int managerLevel;
     bool busy,closing,updatingSettings,disposed;
@@ -735,13 +775,14 @@ internal sealed class TrayContext : ApplicationContext {
                     if(fw<MouseBattery.Ui.HeightTrack) fw=MouseBattery.Ui.HeightTrack;
                     using(var path=PositionPicker.RoundPath(new RectangleF(0,4,fw,MouseBattery.Ui.HeightTrack),MouseBattery.Ui.HeightTrack/2f)) using(var b=new SolidBrush(fill)) g.FillPath(b,path);
                 }
-                // Notches stand proud of the slot (12 in a 14 band) so crossing
-                // them reads as a gauge mark, not a smudge inside the fill.
-                Color neutralTick=MouseBattery.Ui.WithAlpha(muted,110);
+                // In-slot segment marks: neutral takes the card surface so the
+                // track reads as cut at 20%/10%; crossing lights Yellow/Red.
+                // Proud ticks read as scratches at arm's length (user redline).
+                Color neutralTick=surface;
                 Color highTick=level>=0&&level<=20 ? MouseBattery.Ui.Yellow(light) : neutralTick;
                 Color critTick=level>=0&&level<=10 ? MouseBattery.Ui.Red(light) : neutralTick;
-                using(var b=new SolidBrush(highTick)) g.FillRectangle(b,w*0.2f-NotchHalf,1,MouseBattery.Ui.NotchWidth,MouseBattery.Ui.NotchHeight);
-                using(var b=new SolidBrush(critTick)) g.FillRectangle(b,w*0.1f-NotchHalf,1,MouseBattery.Ui.NotchWidth,MouseBattery.Ui.NotchHeight);
+                using(var b=new SolidBrush(highTick)) g.FillRectangle(b,w*0.2f-NotchHalf,4,MouseBattery.Ui.NotchWidth,MouseBattery.Ui.NotchHeight);
+                using(var b=new SolidBrush(critTick)) g.FillRectangle(b,w*0.1f-NotchHalf,4,MouseBattery.Ui.NotchWidth,MouseBattery.Ui.NotchHeight);
             };
             statusCard.Controls.AddRange(new Control[]{managerDevice,chip,managerReadout,managerCharge,managerConnection,managerTrack,managerCompanion});
             controls.Add(statusCard);

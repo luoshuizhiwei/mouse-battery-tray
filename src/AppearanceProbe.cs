@@ -39,11 +39,11 @@ class AppearanceProbe {
                 string dark=value<=10 ? "243,139,168" : value<=20 ? "249,226,175" : "205,214,244";
                 if(!status.Contains("textRGB="+rgbLight) && !status.Contains("textRGB="+dark)) throw new Exception("Wrong threshold color: "+status);
                 // Signature scale: the 20% tick lights amber once crossed, the
-                // 10% tick goes red; both stay neutral above the thresholds.
-                string hiTick=value<=20 ? "223,142,29" : "108,111,133";
-                string hiTickD=value<=20 ? "249,226,175" : "166,173,200";
-                string critTick=value<=10 ? "210,15,57" : "108,111,133";
-                string critTickD=value<=10 ? "243,139,168" : "166,173,200";
+                // 10% tick goes red; neutral = card material (in-slot cut).
+                string hiTick=value<=20 ? "223,142,29" : "255,255,255";
+                string hiTickD=value<=20 ? "249,226,175" : "30,30,46";
+                string critTick=value<=10 ? "210,15,57" : "255,255,255";
+                string critTickD=value<=10 ? "243,139,168" : "30,30,46";
                 if(!status.Contains("tickHigh="+hiTick) && !status.Contains("tickHigh="+hiTickD)) throw new Exception("Wrong 20% tick state: "+status);
                 if(!status.Contains("tickCritical="+critTick) && !status.Contains("tickCritical="+critTickD)) throw new Exception("Wrong 10% tick state: "+status);
                 Console.WriteLine("PASS simulated "+value+"% stale="+stale+" contentWidth="+content.ToString("F3",CultureInfo.InvariantCulture)+" | "+status);

@@ -5,12 +5,23 @@
 ## 当前正式交付
 
 - EXE：`E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe`。
-- EXE SHA256：`991728D51D7B1BBE03969E6F2B9F5166A8D1D0759ED7BDB8E47BAA7795274548`。
-- 内嵌 DLL SHA256：`399B7BB638D10190C7C6BF0F8233255AE3FF66819EB664F58D4895EA114F2458`（运行时组件目录同名）。
-- 回滚备份：`E:\Agent任务\进行中\MouseBattery\robust-v3.2\baseline\MouseBattery-60E6D4FA.exe`（旧 EXE 全哈希 `60E6D4FA49B74709184C276DCF27B69ED8C8BA9CA38814DFDA9AA24D22B23E80`）。
-- 16:54:47 启动 PID 28976；真实 Signature Plus M750 L 85%、Bolt 接收器、RawInput=on、Startup=True。Explorer PID 13748（07:56 启动，本轮未重启）。
-- `Native=initialized | visible position=0 percent=85 … suffixWidth=9.411133 … pillTopARGB=46,32,159,181 unitOpacity=0.80`：新 DLL 的 11.5 DIP 百分号与 §4.3 健康字段已在正式版生效。
-- 本轮证据：`E:\Agent任务\进行中\MouseBattery\design-sheet\settings\settings-candidate-20261116-165110.png`（150% 真机设置窗）、`sheet-S-light/dark.png`（控件状态矩阵）、`dwell-20261116-165319\now.png`（真机悬停卡）、`standalone\candidate\build-manifest.json`。
+- EXE SHA256：`D36F01B17F2C59309179A19CE9B685A12B8B7502A6C3B250C688FA933CB757D1`。
+- 内嵌 DLL SHA256：`54E9CD7EF1CAA24DF803F5B1175A8905493DEA4F56654A2133A6661938257DBE`（运行时组件目录同名）。
+- 回滚备份：`E:\Agent任务\进行中\MouseBattery\robust-v3.2\baseline\MouseBattery-B1705B08.exe`（旧 EXE 全哈希 `B1705B083D7AEA847BC8A07AEDFCCF3DBADA2A0CF1FF2B43DD939271BF611158`）；更早一轮备份 `MouseBattery-60E6D4FA.exe` 仍在。
+- 18:15:13 启动 PID 49396；真实 Signature Plus M750 L 85%、Bolt 接收器、RawInput=on、RawInputError=（空）、Startup=True。Explorer 未重启。
+- `Native=initialized | visible position=0 percent=85 … pillWidth=52 pillHeight=28 … tickHigh=255,255,255 tickCritical=255,255,255 … kind=office`：新 DLL 的轨内中性刻度（浅色=卡面白）已在正式版生效。
+- 本轮证据：`E:\Agent任务\进行中\MouseBattery\design-sheet\settings\settings-candidate-20261116-180958.png`（150% 真机设置窗）、`settings\sheet-S-light/dark.png`（控件状态矩阵）、`dwell-20261116-181346\now.png`（真机悬停卡）、`standalone\candidate\build-manifest.json`。
+
+## 2026-11-16 圈出缺陷二次精修（任务栏示意图与轨内刻度）
+
+- 用户红圈两处：设置窗「显示位置」整段示意图、悬停卡电量轨的两处刻痕。判定为轻度 slop 精修（Catppuccin 品牌不变）。
+- 示意图：原「一排白色占位块」改画成可识别的 Win11 任务栏——开始四格（accent）、搜索/文件夹/浏览器/聊天线图标、托盘 chevron/wifi/音量、右对齐实时时钟（HH:mm + MM/dd，15s Timer 跨分钟才 Invalidate）、show-desktop 细条；全部 GDI+ 自绘且避开四个落点区。未选落点改「虚线胶囊槽」（镜像胶囊自身形状，3-3 dash、muted α150；hover/pressed 填身份色 α34/62），点击目标首次可见。Zones/VisualOrder/键盘与 AX 语义未改。
+- 电量轨刻痕：原「上下出挑 12/14 band」在臂距读作刮痕（用户红圈）。改轨内分段标记 2×6（`Ui.NotchWidth=2/NotchHeight=6`，y=4 落在 6 高槽内），中性色=卡材质（浅=Surface 白、暗=Base 落在 Surface→Scrim 渐变轨行），读作「在 20%/10% 处切开」；越过阈值独立点亮 Yellow/Red 不变。托管 `NotchHalf=1`、原生 tick Margin 39/19、探针中性期望改 255,255,255 / 30,30,46。
+- 回归：48 逻辑 + 18 IPC + 8 真机原生渲染全过；Raw Input canary 4/4、越界 0；控件矩阵明暗已查看；150% 真机设置窗与真机悬停卡 dwell 已查看（dwell series 第 5 帧起稳定 ~3 万像素差、18/24 过阈，其余为淡入期）。
+- 部署：promote-candidate.ps1 优雅退出→备份 B1705B08→复制→双哈希校验→--background（PID 49396）。最新 component 目录=54E9CD7E… 确认新 DLL 加载。
+- 未验证：暗色主题真机设置窗（系统浅色，暗色由控件矩阵覆盖）、隔夜/睡眠唤醒、Explorer 外部重启后自动恢复、≥30 分钟无崩溃观察。
+- 遗留建议（未改）：companion 行双列+身份点（§2.2）、悬停胶囊数字改身份色（§4.2）。
+- 改动文件：src/Program.cs（仅示意图/NotchHalf/轨刻 hunk）、src/Ui.cs、native/TaskbarView.h、src/AppearanceProbe.cs、docs/proposals/catppuccin-design.md。并行轮的 Raw Input/高 DPI/aPad hunk 与 test.ps1 保留未提交，未混入本提交。512 字节 ABI、堆修复表达式、Battery.cs/Hid.cs/TaskbarPublisher.cs/NativeHost.* 未动。
 
 ## 2026-11-16 UI 走查修复（unslop）
 

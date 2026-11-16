@@ -82,8 +82,8 @@ internal static class Ui {
     internal const float CornerButton=10f;
     internal const float CornerIconWell=6f;
     internal const float StrokeFocus=1.5f;
-    internal const float NotchWidth=1.5f;
-    internal const float NotchHeight=12f;
+    internal const float NotchWidth=2f;
+    internal const float NotchHeight=6f;
     internal const float PaddingCard=20f;
     internal const int WidthCardNative=240;      // hover card
     internal const int WidthContentNative=200;   // hover card content column (1% = 2 DIP)

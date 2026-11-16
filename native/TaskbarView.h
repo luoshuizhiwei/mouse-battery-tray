@@ -319,16 +319,17 @@ bool Insert(FrameworkElement const& root,int position) {
     // a Stretch spacer inside a horizontal StackPanel never expanded (dead rail).
     statusLine.Children().Append(v->tooltipConnection);
     v->statusLine=statusLine; v->statusRailText=v->tooltipConnection;
-    // Signature scale: ticks at the REAL 20%/10% thresholds, taller than the
-    // slot so lighting up reads as a gauge notch (F2); container must be 14 high.
+    // Signature scale: in-slot segment marks at the REAL 20%/10% thresholds.
+    // Neutral takes the card material so the track reads as cut; crossing
+    // lights Yellow/Red. Proud ticks read as scratches (user redline 11-16).
     v->tooltipTrack=Grid(); v->tooltipTrack.Height(14); v->tooltipTrack.Margin({0,12,0,10});
     v->trackBackground=Border(); v->trackBackground.Height(6); v->trackBackground.CornerRadius({3,3,3,3}); v->trackBackground.VerticalAlignment(VerticalAlignment::Center);
     v->tooltipFill=Border(); v->tooltipFill.Height(6); v->tooltipFill.HorizontalAlignment(HorizontalAlignment::Left); v->tooltipFill.CornerRadius({3,3,3,3}); v->tooltipFill.VerticalAlignment(VerticalAlignment::Center);
     // Margins are grid-relative: the content column already starts at the card
-    // padding, so 20% = 40-0.75 and 10% = 20-0.75 (the doc's 59.25/39.25 are
+    // padding, so 20% = 40-1 and 10% = 20-1 (the doc's 59.25/39.25 are
     // card-relative and would double-count the 20 DIP padding).
-    v->tickHigh=Windows::UI::Xaml::Shapes::Rectangle(); v->tickHigh.Width(1.5); v->tickHigh.Height(12); v->tickHigh.VerticalAlignment(VerticalAlignment::Center); v->tickHigh.HorizontalAlignment(HorizontalAlignment::Left); v->tickHigh.Margin({39.25,0,0,0});
-    v->tickCritical=Windows::UI::Xaml::Shapes::Rectangle(); v->tickCritical.Width(1.5); v->tickCritical.Height(12); v->tickCritical.VerticalAlignment(VerticalAlignment::Center); v->tickCritical.HorizontalAlignment(HorizontalAlignment::Left); v->tickCritical.Margin({19.25,0,0,0});
+    v->tickHigh=Windows::UI::Xaml::Shapes::Rectangle(); v->tickHigh.Width(2); v->tickHigh.Height(6); v->tickHigh.VerticalAlignment(VerticalAlignment::Center); v->tickHigh.HorizontalAlignment(HorizontalAlignment::Left); v->tickHigh.Margin({39,0,0,0});
+    v->tickCritical=Windows::UI::Xaml::Shapes::Rectangle(); v->tickCritical.Width(2); v->tickCritical.Height(6); v->tickCritical.VerticalAlignment(VerticalAlignment::Center); v->tickCritical.HorizontalAlignment(HorizontalAlignment::Left); v->tickCritical.Margin({19,0,0,0});
     v->tooltipTrack.Children().Append(v->trackBackground); v->tooltipTrack.Children().Append(v->tooltipFill);
     v->tooltipTrack.Children().Append(v->tickHigh); v->tooltipTrack.Children().Append(v->tickCritical);
     // One hairline between readout and state (§2.2): one cut is a partition.
@@ -456,9 +457,10 @@ void Update(Work& work) {
     v.nameDot.Fill(SolidColorBrush(identity));
     v.tooltipHairline.Background(SolidColorBrush(WithAlphaA(CatBorder(light),115)));
     v.statusRailText.TextAlignment(TextAlignment::Right);
-    // Threshold ticks: real 20%/10% positions; neutral = Subtext α110, crossed
-    // = full Yellow/Red (design doc §2.2).
-    Color neutralTick=WithAlphaA(muted,110);
+    // Threshold ticks: real 20%/10% positions; neutral = card material (light
+    // flat Surface, dark Base sits on the Surface→Scrim gradient at the track
+    // row) so the mark reads as a cut, crossed = full Yellow/Red (§2.2).
+    Color neutralTick=light ? CatSurface(light) : CatBase(light);
     // N2: each notch is judged independently: the 20% mark stays lit at any
     // reading at or below 20 (including <=10), the 10% mark only at or below 10.
     Color highTick=s.percent<=20 ? CatYellow(light) : neutralTick;
