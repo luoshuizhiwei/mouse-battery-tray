@@ -61,6 +61,7 @@ class SheetHost {
                     state.Apply(new[]{ other }, compStale == 1 ? now-20000 : now-1000);
                 }
                 if(stale == 2) state.MarkFailed(new[]{ primary.Path }, now);
+                publisher.MarkSuccess();
                 publisher.Publish(state, now, 0, false, themeOverride);
 
                 string status = "";

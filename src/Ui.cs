@@ -50,6 +50,13 @@ internal static class Ui {
     internal static Color Sapphire(bool light) { return light?SapphireLight:SapphireDark; }
     // identity = product-line color resolved by device kind
     internal static Color Identity(bool gaming,bool light) { return gaming?Mauve(light):Sapphire(light); }
+    // Light-theme identity *text*: Sapphire #209FB5 measures ~2.9:1 on white,
+    // so chip ink mixes toward Text (same rule as WarnInk/CritInk); the dot,
+    // fill and track keep the pure hue. Dark keeps the token as-is.
+    internal static Color IdentityInk(bool gaming,bool light) {
+        Color id=Identity(gaming,light);
+        return light ? Overlay(id,255,WithAlpha(TextLight,70)) : id;
+    }
     internal static Color OnAccent(bool light) { return light?SurfaceLight:BaseDark; }
     // Legacy shims kept while call sites migrate to the named role helpers.
     internal static Color GetColor(bool lightMode,Color light,Color dark) { return lightMode?light:dark; }
@@ -81,7 +88,7 @@ internal static class Ui {
     internal const int WidthCardNative=240;      // hover card
     internal const int WidthContentNative=200;   // hover card content column (1% = 2 DIP)
     internal const int WidthWindow=560;
-    internal const int HeightWindowNormal=524;
+    internal const int HeightWindowNormal=502;
     internal const int HeightWindowDegraded=426;
     internal const int WidthCardWindow=520;
     internal const int WidthCardContent=480;     // 1% = 4.8 DIP

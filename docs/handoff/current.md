@@ -1,16 +1,30 @@
 # 鼠标电量工具 — 当前交接
 
-更新：2026-11-06，Asia/Hong_Kong。用户随后反馈分段电量条闪烁，00:58:14已部署 [按需重绘与双缓冲修复](2026-11-06-track-flicker.md)。保留 [软色调](2026-11-06-soft-colors.md)和 [设置布局](2026-11-06-settings-redesign.md)。此前深查/堆修复、taskbar profile、原生胶囊和512字节ABI均保留。
+更新：2026-11-16。本轮按 unslop 走查修复用户截图指出的设置窗与悬停卡缺陷（Catppuccin 契约内的精修，非改品牌），已晋升正式版。历史轮次见各 dated 交接与 [track-flicker](2026-11-06-track-flicker.md)、[soft-colors](2026-11-06-soft-colors.md)、[settings-redesign](2026-11-06-settings-redesign.md)。
 
 ## 当前正式交付
 
 - EXE：`E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe`。
-- EXE SHA256：`8A9E8009FE0EED988F19D66BC1017A74BB2227199BA862DAEC69129ACF0627EB`。
-- 内嵌 DLL SHA256：`05B2DFD7AA161B5E61DC03DE22F6F929E4C7635D8A1A5AF722D0CF689FD272B1`。
-- 版本号仍为回退源码的 4.2.1.0，按完整哈希识别本次交付；未顺手恢复整个历史双模式框架。
-- 11-06 00:58:14启动PID47640；真实PRO X 2 DEX电量80%、2.4G、RawInput=on、活动鼠标02-02-5C-94、RawInputError为空、Startup=True。本轮绑定源码未变。
-- `Native=initialized | visible position=0 percent=80`，实际 XAML 56×48 DIP 占位，位于系统托盘与时钟区域左侧；当前没有进入降级托盘路径。Explorer仍为PID12264，本次部署未重启。
-- 当前重绘证据：`E:\Agent任务\进行中\MouseBattery\track-flicker-20261106`；配色仍在`E:\Agent任务\进行中\MouseBattery\soft-colors-20261106`，布局仍在`E:\Agent任务\进行中\MouseBattery\ui-refine-20261106`。深查修复仍在`E:\Agent任务\进行中\MouseBattery\deep-fixes-20261105`，恢复任务栏仍在`E:\Agent任务\进行中\MouseBattery\taskbar-restore-20261105`；未触动既有baseline或dump。
+- EXE SHA256：`991728D51D7B1BBE03969E6F2B9F5166A8D1D0759ED7BDB8E47BAA7795274548`。
+- 内嵌 DLL SHA256：`399B7BB638D10190C7C6BF0F8233255AE3FF66819EB664F58D4895EA114F2458`（运行时组件目录同名）。
+- 回滚备份：`E:\Agent任务\进行中\MouseBattery\robust-v3.2\baseline\MouseBattery-60E6D4FA.exe`（旧 EXE 全哈希 `60E6D4FA49B74709184C276DCF27B69ED8C8BA9CA38814DFDA9AA24D22B23E80`）。
+- 16:54:47 启动 PID 28976；真实 Signature Plus M750 L 85%、Bolt 接收器、RawInput=on、Startup=True。Explorer PID 13748（07:56 启动，本轮未重启）。
+- `Native=initialized | visible position=0 percent=85 … suffixWidth=9.411133 … pillTopARGB=46,32,159,181 unitOpacity=0.80`：新 DLL 的 11.5 DIP 百分号与 §4.3 健康字段已在正式版生效。
+- 本轮证据：`E:\Agent任务\进行中\MouseBattery\design-sheet\settings\settings-candidate-20261116-165110.png`（150% 真机设置窗）、`sheet-S-light/dark.png`（控件状态矩阵）、`dwell-20261116-165319\now.png`（真机悬停卡）、`standalone\candidate\build-manifest.json`。
+
+## 2026-11-16 UI 走查修复（unslop）
+
+- 设置窗：大读数改 DIP 空间自绘（数字与 % 共基线，根治小 % 丢失/错位的 "o/"）；迷你任务栏示意图全 GDI+ 自绘（ScaleTransform 下 TextRenderer 不缩放导致的落点错位根治）；刻度改 10%/20% 正确位置并上下出挑；右轨统一 500 DIP 对齐（电量/连接/芯片自适应宽度贴右）；命令区收敛为单行「退出工具 + 完成」RoundedButton（r10、hover/pressed/disabled/focus 全状态），窗高 524→502；头部渐变紫瓷砖改扁平电池标记（与托盘图标同族）。
+- 悬停卡：nameRow 改 Grid（14px 点列 + Star 名列），身份点 8×8 + 16×16 α36 光晕；statusLine 改 Grid Auto+Star 复活右轨；去掉构造期 Opacity 双重 fade（墨色单 α 在 Update 设置）；刻度 margin 改 Grid 相对 39.25/19.25（契约 59.25/39.25 重复计了 padding）；卡大数字改身份色、状态墨色矩阵（重连=WarnInk、充电故障=CritInk、旧读数=α210 WarnInk）；track 下加 α115 发丝线；胶囊 % 改 11.5 DIP、单 α。
+- 图标：`scripts/build-icon.ps1` Draw() 改扁平电池标记（accent #1E66F5、70% 底锚电量楔），16–128 DIB + 256 PNG 结构不变；预览 `E:\Agent任务\进行中\MouseBattery\icon-preview2.png`。
+- 深色示意图占位图标块原 Surface α180 与条底仅差 1 RGB 步而不可见，改 Text α26 表面步（Program.cs PositionPicker）。
+- 回归：48 逻辑 + 18 IPC + 8 真机原生渲染全过；控件状态矩阵明暗双主题已查看；150% 真机设置窗（含真实 85% 数据）与真机悬停卡 dwell 已查看（卡 ~600ms 出现、20 帧像素稳定）。dwell 脚本 30000 像素阈值按深色壁纸调过，浅色壁纸下以 series 非零稳定判定。
+- 测试 harness 漂移修复（仅测试代码）：PublisherTests/AppearanceProbe/SheetHost 补 `MarkSuccess()`（offset 8 现为发布端系统时钟 tick）、PublisherTests 的 `Apply` 改两参。生产语义未改。
+- 存量失败不属本轮：RecoveryTests 5 失败（该 stage 只编译 Battery.cs+RecoveryTests.cs，两者本轮未改；9993e95 登记并行轮时即红，待整合决策）。本轮回归门禁不含该 stage。
+- 未验证：暗色主题真机设置窗（系统为浅色，暗色由控件矩阵覆盖）、隔夜/睡眠唤醒、Explorer 外部重启后自动恢复。
+- 遗留建议（未改）：companion 行双列+身份点（§2.2）、悬停胶囊数字改身份色（§4.2；现为 Text 以与探针断言一致）。
+- 脚本编码：build-icon.ps1 补 UTF-16LE BOM、probe-card-dwell.ps1 补 UTF-8 BOM（PS 5.1 读中文路径）；无 BOM UTF-8 的构建链脚本一律用 pwsh 7 执行。verify-candidate-settings.ps1 增加 -WaitMs 参数（首poll前截图会拍到"尚未读取"）。
+- 改动文件：src/Program.cs、src/Ui.cs、src/app.ico、native/TaskbarView.h、scripts/build-icon.ps1、src/PublisherTests.cs、src/AppearanceProbe.cs、tools/design-sheet/{SettingsSheet.cs,SheetHost.cs,probe-card-dwell.ps1,verify-candidate-settings.ps1}。512 字节 ABI、堆修复表达式、Battery.cs/Hid.cs/TaskbarPublisher.cs/NativeHost.* 未动。
 
 ## 恢复显示所需修复
 

@@ -25,6 +25,7 @@ class AppearanceProbe {
                 long now=clock.ElapsedMilliseconds;
                 state.Apply(new[]{mock},now);
                 if(stale) state.MarkFailed(new[]{mock.Path},now);
+                publisher.MarkSuccess();
                 publisher.Publish(state,now,0,false);
                 host.Maintain();Thread.Sleep(2200);host.Maintain();
                 string status=host.Status;

@@ -1,4 +1,4 @@
-param([string]$SheetDir = 'E:\Agent任务\进行中\MouseBattery\design-sheet')
+﻿param([string]$SheetDir = 'E:\Agent任务\进行中\MouseBattery\design-sheet')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms

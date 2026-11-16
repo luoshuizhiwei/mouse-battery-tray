@@ -65,10 +65,11 @@ struct View {
     Border pill{nullptr}; TextBlock suffix{nullptr},tooltipName{nullptr},tooltipValue{nullptr},tooltipStatus{nullptr},tooltipConnection{nullptr};
     TextBlock valueUnit{nullptr},tooltipOther{nullptr};
     Border statusWell{nullptr};
-    StackPanel statusLine{nullptr};
+    Grid statusLine{nullptr};
     TextBlock statusRailText{nullptr}; // right-aligned transport text sharing ④'s rail
-    Grid tooltipTrack{nullptr}; Border trackBackground{nullptr}, tooltipFill{nullptr};
+    Grid tooltipTrack{nullptr}; Border trackBackground{nullptr}, tooltipFill{nullptr}, tooltipHairline{nullptr};
     Windows::UI::Xaml::Shapes::Rectangle tickHigh{nullptr}, tickCritical{nullptr};
+    Windows::UI::Xaml::Shapes::Ellipse nameHalo{nullptr}, nameDot{nullptr};
     FontIcon statusGlyph{nullptr};
     ColumnDefinition column{nullptr},implicitColumn{nullptr};
     MenuFlyout menu{nullptr}; MenuFlyoutItem settings{nullptr}, toggle{nullptr}, exit{nullptr};
@@ -191,10 +192,6 @@ XamlRoot TaskbarRoot(HWND window) {
     return element ? element.XamlRoot() : nullptr;
 }
 
-TextBlock StackKindText() {
-    TextBlock t; t.FontFamily(FontFamily(L"Segoe UI Variable Text")); t.FontSize(10.5); t.FontWeight(Windows::UI::Text::FontWeights::Medium()); t.Opacity(0.85);
-    return t;
-}
 // Pill coloring lives here so a pointer hover swaps the readout between its
 void PaintPill(View& v) {
     if(!v.pill) return;
@@ -270,7 +267,7 @@ bool Insert(FrameworkElement const& root,int position) {
     v->host.MinWidth(56); v->host.VerticalAlignment(VerticalAlignment::Stretch);
     if(position==3) {v->host.Width(56);v->host.HorizontalAlignment(HorizontalAlignment::Right);}
     v->host.Background(SolidColorBrush(Colors::Transparent()));
-    v->pill=Border(); v->pill.Width(52); v->pill.Height(28); v->pill.CornerRadius({9,9,9,9});
+    v->pill=Border(); v->pill.Width(52); v->pill.Height(28); v->pill.CornerRadius({10,10,10,10});
     v->pill.Padding({4,0,4,0}); v->pill.BorderThickness({1,1,1,1});
     v->pill.HorizontalAlignment(HorizontalAlignment::Center); v->pill.VerticalAlignment(VerticalAlignment::Center);
     StackPanel number; number.Orientation(Orientation::Horizontal); number.HorizontalAlignment(HorizontalAlignment::Center); number.VerticalAlignment(VerticalAlignment::Center);
@@ -278,14 +275,27 @@ bool Insert(FrameworkElement const& root,int position) {
     // background) but one step larger than the clock for legibility; hovering
     // wakes the glass pill and the data weight.
     v->text=TextBlock(); v->text.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->text.FontSize(15.0); v->text.FontWeight(Windows::UI::Text::FontWeights::Normal()); v->text.VerticalAlignment(VerticalAlignment::Center);
-    v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(12.0); v->suffix.Opacity(0.80); v->suffix.Margin({1,2,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center);
+    v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(11.5); v->suffix.Margin({2,2,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center); // opacity is theme-dependent, set in Update (§4.1)
     number.Children().Append(v->text); number.Children().Append(v->suffix); v->pill.Child(number); v->host.Child(v->pill);
     StackPanel card; card.Width(240); card.Padding({20,20,20,20});
-    v->tooltipName=TextBlock(); v->tooltipName.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipName.FontSize(12.0); v->tooltipName.FontWeight(Windows::UI::Text::FontWeights::Medium()); v->tooltipName.Opacity(0.85); v->tooltipName.Margin({0,0,0,6});
+    // ① Identity band (§2.2): 16 DIP halo + 8 DIP core at the content origin,
+    // device name 6 DIP to the right of the core. The halo overhangs 4 DIP
+    // into the card padding, so the dot column is 14 wide with a -4 margin.
+    v->tooltipName=TextBlock(); v->tooltipName.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipName.FontSize(13.0); v->tooltipName.FontWeight(Windows::UI::Text::FontWeights::Medium()); v->tooltipName.VerticalAlignment(VerticalAlignment::Center); v->tooltipName.TextTrimming(TextTrimming::CharacterEllipsis);
+    Grid nameRow; nameRow.Margin({0,0,0,8});
+    ColumnDefinition dotColumn; dotColumn.Width({14,GridUnitType::Pixel});
+    ColumnDefinition nameColumn; nameColumn.Width({1,GridUnitType::Star});
+    nameRow.ColumnDefinitions().Append(dotColumn); nameRow.ColumnDefinitions().Append(nameColumn);
+    Grid dotHost; dotHost.Width(16); dotHost.Height(16); dotHost.Margin({-4,0,0,0}); dotHost.VerticalAlignment(VerticalAlignment::Center);
+    v->nameHalo=Windows::UI::Xaml::Shapes::Ellipse(); v->nameHalo.Width(16); v->nameHalo.Height(16);
+    v->nameDot=Windows::UI::Xaml::Shapes::Ellipse(); v->nameDot.Width(8); v->nameDot.Height(8);
+    dotHost.Children().Append(v->nameHalo); dotHost.Children().Append(v->nameDot);
+    Grid::SetColumn(dotHost,0); Grid::SetColumn(v->tooltipName,1);
+    nameRow.Children().Append(dotHost); nameRow.Children().Append(v->tooltipName);
     v->tooltipValue=TextBlock(); v->tooltipValue.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->tooltipValue.FontSize(40.0); v->tooltipValue.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); v->tooltipValue.VerticalAlignment(VerticalAlignment::Center);
     // Editorial percent: the numeral stays threshold-colored, the unit recedes.
     StackPanel valueRow; valueRow.Orientation(Orientation::Horizontal);
-    v->valueUnit=TextBlock(); v->valueUnit.Text(L"%"); v->valueUnit.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->valueUnit.FontSize(15.0); v->valueUnit.Opacity(0.80); v->valueUnit.Margin({4,0,0,6}); v->valueUnit.VerticalAlignment(VerticalAlignment::Bottom); // baseline-hug the numeral
+    v->valueUnit=TextBlock(); v->valueUnit.Text(L"%"); v->valueUnit.FontFamily(FontFamily(L"Segoe UI Variable Display")); v->valueUnit.FontSize(15.0); v->valueUnit.Margin({4,0,0,6}); v->valueUnit.VerticalAlignment(VerticalAlignment::Bottom); // baseline-hug the numeral; ink α205 set in Update
     valueRow.Children().Append(v->tooltipValue); valueRow.Children().Append(v->valueUnit);
     v->tooltipStatus=TextBlock(); v->tooltipStatus.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipStatus.FontSize(12.0); v->tooltipStatus.FontWeight(Windows::UI::Text::FontWeights::Normal()); v->tooltipStatus.VerticalAlignment(VerticalAlignment::Center);
     // Charging is the one state that earns a symbol; verified E945 bolt. The
@@ -296,28 +306,36 @@ bool Insert(FrameworkElement const& root,int position) {
     v->statusWell.Child(v->statusGlyph);
     StackPanel statusRow; statusRow.Orientation(Orientation::Horizontal);
     statusRow.Children().Append(v->statusWell); statusRow.Children().Append(v->tooltipStatus);
-    v->tooltipConnection=TextBlock(); v->tooltipConnection.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipConnection.FontSize(11.0); v->tooltipConnection.Opacity(0.75); v->tooltipConnection.VerticalAlignment(VerticalAlignment::Center);
-    StackPanel statusLine; statusLine.Orientation(Orientation::Horizontal); // ④ state left / transport right, one rail
+    v->tooltipConnection=TextBlock(); v->tooltipConnection.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipConnection.FontSize(11.0); v->tooltipConnection.VerticalAlignment(VerticalAlignment::Center); // ink α190 set in Update
+    Grid statusLine; // ④ state left / transport right, one rail (§2.2)
+    ColumnDefinition stateColumn; stateColumn.Width({1,GridUnitType::Auto});
+    ColumnDefinition railColumn; railColumn.Width({1,GridUnitType::Star});
+    statusLine.ColumnDefinitions().Append(stateColumn); statusLine.ColumnDefinitions().Append(railColumn);
+    Grid::SetColumn(statusRow,0); Grid::SetColumn(v->tooltipConnection,1);
     statusLine.Children().Append(statusRow);
     // The transport text MUST be in the visual tree: Update() writes to it every
     // dispatch, and mutating an unparented WinRT object long-term corrupts the
-    // heap (the overnight 0xC0000374 pattern). A spacer pushes it to the right.
-    Windows::UI::Xaml::Controls::Border railSpacer; railSpacer.HorizontalAlignment(HorizontalAlignment::Stretch); railSpacer.Width(1);
-    statusLine.Children().Append(railSpacer);
+    // heap (the overnight 0xC0000374 pattern). The star column pins it right —
+    // a Stretch spacer inside a horizontal StackPanel never expanded (dead rail).
     statusLine.Children().Append(v->tooltipConnection);
     v->statusLine=statusLine; v->statusRailText=v->tooltipConnection;
     // Signature scale: ticks at the REAL 20%/10% thresholds, taller than the
     // slot so lighting up reads as a gauge notch (F2); container must be 14 high.
-    v->tooltipTrack=Grid(); v->tooltipTrack.Height(14); v->tooltipTrack.Margin({0,10,0,10});
+    v->tooltipTrack=Grid(); v->tooltipTrack.Height(14); v->tooltipTrack.Margin({0,12,0,10});
     v->trackBackground=Border(); v->trackBackground.Height(6); v->trackBackground.CornerRadius({3,3,3,3}); v->trackBackground.VerticalAlignment(VerticalAlignment::Center);
     v->tooltipFill=Border(); v->tooltipFill.Height(6); v->tooltipFill.HorizontalAlignment(HorizontalAlignment::Left); v->tooltipFill.CornerRadius({3,3,3,3}); v->tooltipFill.VerticalAlignment(VerticalAlignment::Center);
-    v->tickHigh=Windows::UI::Xaml::Shapes::Rectangle(); v->tickHigh.Width(1.5); v->tickHigh.Height(12); v->tickHigh.VerticalAlignment(VerticalAlignment::Center); v->tickHigh.HorizontalAlignment(HorizontalAlignment::Left); v->tickHigh.Margin({57.75,0,0,0});
-    v->tickCritical=Windows::UI::Xaml::Shapes::Rectangle(); v->tickCritical.Width(1.5); v->tickCritical.Height(12); v->tickCritical.VerticalAlignment(VerticalAlignment::Center); v->tickCritical.HorizontalAlignment(HorizontalAlignment::Left); v->tickCritical.Margin({37.75,0,0,0});
+    // Margins are grid-relative: the content column already starts at the card
+    // padding, so 20% = 40-0.75 and 10% = 20-0.75 (the doc's 59.25/39.25 are
+    // card-relative and would double-count the 20 DIP padding).
+    v->tickHigh=Windows::UI::Xaml::Shapes::Rectangle(); v->tickHigh.Width(1.5); v->tickHigh.Height(12); v->tickHigh.VerticalAlignment(VerticalAlignment::Center); v->tickHigh.HorizontalAlignment(HorizontalAlignment::Left); v->tickHigh.Margin({39.25,0,0,0});
+    v->tickCritical=Windows::UI::Xaml::Shapes::Rectangle(); v->tickCritical.Width(1.5); v->tickCritical.Height(12); v->tickCritical.VerticalAlignment(VerticalAlignment::Center); v->tickCritical.HorizontalAlignment(HorizontalAlignment::Left); v->tickCritical.Margin({19.25,0,0,0});
     v->tooltipTrack.Children().Append(v->trackBackground); v->tooltipTrack.Children().Append(v->tooltipFill);
     v->tooltipTrack.Children().Append(v->tickHigh); v->tooltipTrack.Children().Append(v->tickCritical);
+    // One hairline between readout and state (§2.2): one cut is a partition.
+    v->tooltipHairline=Border(); v->tooltipHairline.Height(1); v->tooltipHairline.Margin({0,0,0,10});
     // Companion mouse summary fed by tooltip line 1; hidden for single-mouse setups.
-    v->tooltipOther=TextBlock(); v->tooltipOther.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipOther.FontSize(11.5); v->tooltipOther.Opacity(0.88); v->tooltipOther.Margin({0,8,0,0}); v->tooltipOther.Visibility(Visibility::Collapsed);
-    card.Children().Append(v->tooltipName); card.Children().Append(valueRow); card.Children().Append(v->tooltipTrack); card.Children().Append(statusLine); card.Children().Append(v->tooltipOther);
+    v->tooltipOther=TextBlock(); v->tooltipOther.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipOther.FontSize(11.5); v->tooltipOther.Margin({0,8,0,0}); v->tooltipOther.Visibility(Visibility::Collapsed); // ink α225 set in Update
+    card.Children().Append(nameRow); card.Children().Append(valueRow); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipHairline); card.Children().Append(statusLine); card.Children().Append(v->tooltipOther);
     v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({12,12,12,12}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->pill,v->tooltip); // pill only: hovering the empty slot corners must not open the card
     v->menu=MenuFlyout();
     auto iconFor=[](wchar_t const* glyph){ FontIcon i; i.FontFamily(FontFamily(L"Segoe MDL2 Assets")); i.Glyph(glyph); return i; };
@@ -414,6 +432,7 @@ void Update(Work& work) {
     bool restyle=!v.styled||sig!=v.styleSig;
     if(restyle) { // N3: nothing changed => touch no ToolTip property, keep it open
     v.text.Foreground(SolidColorBrush(color)); v.suffix.Foreground(SolidColorBrush(color));
+    v.suffix.Opacity(light?0.80:0.72); // §4.1: rest has no glass, opacity carries the unit's recession
     // Layered glass pill: dense at the top edge, fading toward the bottom.
     v.baseTop=fillTop; v.baseBottom=fillBottom; v.baseStroke=stroke;
     PaintPill(v);
@@ -426,9 +445,16 @@ void Update(Work& work) {
     } else v.tooltipOther.Visibility(Visibility::Collapsed);
 
     v.tooltipValue.Text(std::to_wstring(s.percent)); // numeral only: the % lives in valueUnit (F1)
-    v.tooltipValue.Foreground(SolidColorBrush(color));
+    // §2.2: the CARD numeral carries identity when healthy (the pill numeral
+    // stays Text at rest — §4.1 clock isomorphism, probe-asserted). Stale
+    // readings decay the whole numeral to α190 (§3.6).
+    Color valueColor=warnRed ? CatCritInk(light) : warnYellow ? CatWarnInk(light) : identity;
+    if(s.state==2) valueColor=WithAlphaA(valueColor,190);
+    v.tooltipValue.Foreground(SolidColorBrush(valueColor));
     Color muted=CatSubtext(light);
-    Color accent=CatAccent(light);
+    v.nameHalo.Fill(SolidColorBrush(WithAlphaA(identity,36)));
+    v.nameDot.Fill(SolidColorBrush(identity));
+    v.tooltipHairline.Background(SolidColorBrush(WithAlphaA(CatBorder(light),115)));
     v.statusRailText.TextAlignment(TextAlignment::Right);
     // Threshold ticks: real 20%/10% positions; neutral = Subtext α110, crossed
     // = full Yellow/Red (design doc §2.2).
@@ -446,13 +472,13 @@ void Update(Work& work) {
     else switch(s.charging) {case 0:charge=L"未充电";break;case 1:charge=L"正在充电";break;case 2:charge=L"慢速充电";break;case 3:charge=L"已充满";break;case 4:charge=L"充电异常";break;default:charge=L"未知充电状态 ("+std::to_wstring(s.charging)+L")";}
     bool showWell=false;
     Color wellFill=identity, wellStroke=identity, boltColor=identity;
-    if(s.state==2) { v.tooltipStatus.Foreground(SolidColorBrush(CatYellow(light))); }
+    if(s.state==2) { v.tooltipStatus.Foreground(SolidColorBrush(CatWarnInk(light))); }
     else if(!gaming || s.charging==0 || s.charging==3) {
         v.tooltipStatus.Foreground(SolidColorBrush(WithAlphaA(CatText(light),s.charging==3?235:220)));
         if(s.charging==3 && gaming) { /* full: no bolt */ }
         else if(!gaming) { v.tooltipStatus.Foreground(SolidColorBrush(WithAlphaA(CatSubtext(light),220))); }
     } else if(s.charging==4) {
-        charge=L"充电异常"; v.tooltipStatus.Foreground(SolidColorBrush(CatRed(light)));
+        charge=L"充电异常"; v.tooltipStatus.Foreground(SolidColorBrush(CatCritInk(light)));
         wellFill=WithAlphaA(CatRed(light),34); wellStroke=WithAlphaA(CatRed(light),110); boltColor=CatRed(light); showWell=true;
     } else { // charging 1/2
         v.tooltipStatus.Foreground(SolidColorBrush(WithAlphaA(CatText(light),235)));
@@ -493,7 +519,7 @@ void Update(Work& work) {
     v.tooltipConnection.Foreground(SolidColorBrush(WithAlphaA(muted,190)));
     v.tooltipOther.Foreground(SolidColorBrush(WithAlphaA(muted,225)));
     bool staleRow=detail.find(L"旧读数")!=std::wstring::npos;
-    v.tooltipOther.Foreground(SolidColorBrush(staleRow ? WithAlphaA(CatYellow(light),210) : WithAlphaA(muted,225)));
+    v.tooltipOther.Foreground(SolidColorBrush(staleRow ? WithAlphaA(CatWarnInk(light),210) : WithAlphaA(muted,225)));
     v.trackBackground.Background(SolidColorBrush(CatBorder(light)));
     v.tooltipFill.Background(SolidColorBrush(s.percent<=20 ? pillColor : identity));
     v.tooltipFill.Width(200.0*s.percent/100.0);
@@ -508,6 +534,9 @@ void Update(Work& work) {
     work.health+=L" state="+std::to_wstring(s.state)+L" textRGB="+std::to_wstring(color.R)+L","+std::to_wstring(color.G)+L","+std::to_wstring(color.B);
     auto solidRGB=[](Windows::UI::Xaml::Shapes::Rectangle const& r){ auto b=r.Fill().as<SolidColorBrush>(); return std::to_wstring(b.Color().R)+L","+std::to_wstring(b.Color().G)+L","+std::to_wstring(b.Color().B); };
     work.health+=L" tickHigh="+solidRGB(v.tickHigh)+L" tickCritical="+solidRGB(v.tickCritical)+L" other="+(v.tooltipOther.Visibility()==Visibility::Visible?L"1":L"0")+L" kind="+(gaming?L"gaming":L"office");
+    // §4.3 diagnostics: glass top stop and unit opacity, for probe assertions.
+    wchar_t unitBuf[16]; _snwprintf_s(unitBuf,16,_TRUNCATE,L"%.2f",light?0.80:0.72);
+    work.health+=L" pillTopARGB="+std::to_wstring(v.baseTop.A)+L","+std::to_wstring(v.baseTop.R)+L","+std::to_wstring(v.baseTop.G)+L","+std::to_wstring(v.baseTop.B)+L" unitOpacity="+unitBuf;
 }
 
 LRESULT CALLBACK DispatchHook(int code,WPARAM wParam,LPARAM lParam) {

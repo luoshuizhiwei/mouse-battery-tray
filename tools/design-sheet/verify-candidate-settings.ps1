@@ -1,7 +1,8 @@
 param(
   [string]$Candidate = 'E:\Agent任务\进行中\MouseBattery\robust-v3.2\candidate-v411\MouseBattery.exe',
   [string]$App = 'E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe',
-  [string]$OutDir = 'E:\Agent任务\进行中\MouseBattery\design-sheet\settings'
+  [string]$OutDir = 'E:\Agent任务\进行中\MouseBattery\design-sheet\settings',
+  [int]$WaitMs = 1600
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
@@ -37,7 +38,7 @@ try {
     if ($proc) { break }
   }
   if (-not $proc) { throw 'candidate settings window did not appear (possible exception in the new paint code)' }
-  Start-Sleep -Milliseconds 1600
+  Start-Sleep -Milliseconds $WaitMs
   $r = New-Object CandWin+RECT
   [void][CandWin]::GetWindowRect($proc.MainWindowHandle, [ref]$r)
   $w = $r.Right - $r.Left; $h = $r.Bottom - $r.Top

@@ -14,6 +14,8 @@ using MouseBattery;
 class SettingsSheet {
     static readonly string ToggleText = "\u767b\u5f55 Windows \u540e\u81ea\u52a8\u542f\u52a8";
     static bool light;
+    static Control focusA, focusB;
+    static int buttonRowY;
 
     [STAThread]
     static int Main(string[] args) {
@@ -30,9 +32,22 @@ class SettingsSheet {
             };
             Build(form);
             form.Show();
+            if (focusA != null) { focusA.Focus(); focusA.Invalidate(); }
             form.Refresh();
             var bmp = new Bitmap(form.ClientSize.Width, form.ClientSize.Height, PixelFormat.Format32bppArgb);
             form.DrawToBitmap(bmp, new Rectangle(0, 0, bmp.Width, bmp.Height));
+            // One form holds one keyboard focus: re-shoot the button row with
+            // the button focused and stitch it over the toggle-focus capture.
+            if (focusB != null) {
+                focusB.Focus(); focusB.Invalidate();
+                if (focusA != null) focusA.Invalidate();
+                form.Refresh();
+                using (var bmp2 = new Bitmap(form.ClientSize.Width, form.ClientSize.Height, PixelFormat.Format32bppArgb)) {
+                    form.DrawToBitmap(bmp2, new Rectangle(0, 0, bmp2.Width, bmp2.Height));
+                    var row = new Rectangle(0, buttonRowY - 8, bmp.Width, 50);
+                    using (var g = Graphics.FromImage(bmp)) g.DrawImage(bmp2, row, row, GraphicsUnit.Pixel);
+                }
+            }
             string path = Path.Combine(outDir, "sheet-S-" + (light ? "light" : "dark") + ".png");
             bmp.Save(path, ImageFormat.Png);
             bmp.Dispose();
@@ -61,7 +76,7 @@ class SettingsSheet {
         toggle.Location = new Point(x, y);
         toggle.Checked = on;
         toggle.Enabled = enabled;
-        if (focus) toggle.Focus();
+        if (focus) focusA = toggle;
         return toggle;
     }
 
@@ -81,13 +96,13 @@ class SettingsSheet {
         Caption(form, "S sheet | production controls | " + (light ? "Latte light" : "Mocha dark") + " | 96-DPI logical raster (geometry/state only)", 16, 12, true);
 
         int y = 52;
-        Caption(form, "ToggleSwitch (production: 232x26; track 36x18) - rest off / rest on / disabled / focus", 16, y, true);
+        Caption(form, "ToggleSwitch (production: 232x26; track 40x20) - rest off / rest on / disabled / focus", 16, y, true);
         y += 26;
         form.Controls.Add(MakeToggle(16, y, false, true, false)); Caption(form, "off", 260, y + 5, false);
         form.Controls.Add(MakeToggle(16, y + 34, true, true, false)); Caption(form, "on", 260, y + 39, false);
         form.Controls.Add(MakeToggle(16, y + 68, false, false, false)); Caption(form, "disabled off", 260, y + 73, false);
         form.Controls.Add(MakeToggle(16, y + 102, true, false, false)); Caption(form, "disabled on", 260, y + 107, false);
-        form.Controls.Add(MakeToggle(16, y + 136, false, true, true)); Caption(form, "focus (dotted ControlPaint rect: legacy, F9)", 260, y + 141, false);
+        form.Controls.Add(MakeToggle(16, y + 136, false, true, true)); Caption(form, "focus (rounded accent ring)", 260, y + 141, false);
 
         y += 210;
         Caption(form, "PositionPicker (production 480x68) - selected 0..3, then hover on unselected slots", 16, y, true);
@@ -108,14 +123,16 @@ class SettingsSheet {
         Caption(form, "sunken", 500, y + 42, false);
 
         y += 88;
-        Caption(form, "Buttons (production properties, rest only: hover/pressed need a live pointer)", 16, y, true);
+        Caption(form, "RoundedButton (production 96x34, r10) - rest only: hover/pressed need a live pointer", 16, y, true);
         y += 26;
-        var primary = new Button { Text = "\u5b8c\u6210", Location = new Point(16, y), Size = new Size(96, 34), FlatStyle = FlatStyle.Flat, BackColor = Ui.Accent(light), ForeColor = Ui.OnAccent(light) };
-        primary.FlatAppearance.BorderSize = 0;
-        var secondary = new Button { Text = "\u9000\u51fa\u5de5\u5177", Location = new Point(124, y), Size = new Size(96, 34), FlatStyle = FlatStyle.Flat, BackColor = Ui.Base(light), ForeColor = Ui.Subtext(light) };
-        secondary.FlatAppearance.BorderSize = 0;
-        form.Controls.Add(primary); form.Controls.Add(secondary);
-        Caption(form, "primary rest / secondary rest", 240, y + 9, false);
+        var btnFont = new Font("Microsoft YaHei UI", 9f);
+        var primary = new RoundedButton(light, true) { Text = "\u5b8c\u6210", Location = new Point(16, y), Size = new Size(96, 34), Font = btnFont };
+        var secondary = new RoundedButton(light, false) { Text = "\u9000\u51fa\u5de5\u5177", Location = new Point(124, y), Size = new Size(96, 34), Font = btnFont };
+        var secondaryFocus = new RoundedButton(light, false) { Text = "\u9000\u51fa\u5de5\u5177", Location = new Point(232, y), Size = new Size(96, 34), Font = btnFont };
+        form.Controls.Add(primary); form.Controls.Add(secondary); form.Controls.Add(secondaryFocus);
+        focusB = secondaryFocus;
+        buttonRowY = y;
+        Caption(form, "primary rest / secondary rest / secondary focus", 340, y + 9, false);
 
         y += 60;
         Caption(form, "Degraded banner (production composition for the same theme)", 16, y, true);
