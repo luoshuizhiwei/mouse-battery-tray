@@ -267,14 +267,19 @@ internal sealed class ToggleSwitch : CheckBox {
         Color parent=Parent!=null?Parent.BackColor:SystemColors.Control;
         g.Clear(parent);
         g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        // TrackW/TrackH/KnobSize are 96-DPI design units, but the window scales
+        // every control once (manager.Scale). Painting raw device pixels shrank
+        // the switch to 2/3 size at 150%; keep the design transform instead.
+        // TextRenderer ignores ScaleTransform, so the label is drawn last.
+        float k=Height/26f;
+        if(k<=0) return;
+        g.ScaleTransform(k,k);
+        float w=Width/k;
         Color accent=Ui.Accent(light),onKnob=Ui.OnAccent(light),border=Ui.Border(light),text=Ui.Text(light),muted=Ui.Subtext(light);
         int textW=0;
-        if(!string.IsNullOrEmpty(Text)) {
-            textW=TextRenderer.MeasureText(Text,Font).Width;
-            TextRenderer.DrawText(g,Text,Font,new Rectangle(0,0,textW+2,Height),Enabled?text:Ui.WithAlpha(text,110),TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
-        }
-        int trackX=textW>0?Math.Min(textW+12,Width-TrackW):0;
-        float trackY=(Height-TrackH)/2f;
+        if(!string.IsNullOrEmpty(Text)) textW=(int)Math.Ceiling(TextRenderer.MeasureText(Text,Font).Width/k);
+        int trackX=textW>0?Math.Min(textW+12,(int)w-TrackW):0;
+        float trackY=(26-TrackH)/2f;
         Color fill,stroke,knob;
         if(!Enabled) {
             fill=Ui.Overlay(parent,255,Ui.WithAlpha(border,45));
@@ -299,6 +304,11 @@ internal sealed class ToggleSwitch : CheckBox {
         using(var b=new SolidBrush(knob)) g.FillEllipse(b,knobX,knobY,knobSize,knobSize);
         if(Focused) using(var p=new Pen(Ui.WithAlpha(accent,235),1.5f))
             using(var path=PositionPicker.RoundPath(new RectangleF(trackX-3,trackY-3,TrackW+6,TrackH+6),13)) g.DrawPath(p,path);
+        if(textW>0) {
+            g.ResetTransform();
+            int boxW=Math.Min(Width,(int)Math.Ceiling((textW+2)*k));
+            TextRenderer.DrawText(g,Text,Font,new Rectangle(0,0,boxW,Height),Enabled?text:Ui.WithAlpha(text,110),TextFormatFlags.VerticalCenter|TextFormatFlags.NoPrefix);
+        }
     }
     protected override void OnMouseEnter(EventArgs e) { hover=true; Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { hover=false; pressed=false; Invalidate(); base.OnMouseLeave(e); }
@@ -357,7 +367,18 @@ internal sealed class RoundedButton : Button {
 // (RIDEV_INPUTSINK) so the tool can tell which mouse the user is moving.
 internal sealed class MessageWindow : Form {
     public Action<Message> OnMessage;
-    protected override void WndProc(ref Message m) { if(OnMessage!=null) OnMessage(m); base.WndProc(ref m); }
+    public int Total, Raw;
+    // A hidden Form never receives WM_INPUT: RIDEV_INPUTSINK needs a real window.
+    // Keep it a 1x1 borderless window parked off-screen instead, out of the
+    // taskbar, so raw input has somewhere to land without anything visible.
+    public MessageWindow() {
+        FormBorderStyle=FormBorderStyle.None;
+        ShowInTaskbar=false;
+        StartPosition=FormStartPosition.Manual;
+        Location=new Point(-30000,-30000); // park off-screen; WM_INPUT never arrives either way on this build
+        Size=new Size(1,1);
+    }
+    protected override void WndProc(ref Message m) { Total++; if(m.Msg==0x00FF) Raw++; if(OnMessage!=null) OnMessage(m); base.WndProc(ref m); }
 }
 internal sealed class TrayContext : ApplicationContext {
     readonly BatterySource source=new BatterySource();
@@ -374,6 +395,10 @@ internal sealed class TrayContext : ApplicationContext {
     readonly MessageWindow dispatcher=new MessageWindow();
     readonly Dictionary<IntPtr,string> rawNames=new Dictionary<IntPtr,string>();
     bool rawInputOk;
+    string rawInputError;
+    int rawSeen;
+    string rawLast="";
+    string rawRegInfo="";
     readonly EventWaitHandle show;
     readonly EventWaitHandle quit=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ExitEventName);
     readonly EventWaitHandle toggleStartup=new EventWaitHandle(false,EventResetMode.AutoReset,Program.ToggleEventName);
@@ -395,6 +420,7 @@ internal sealed class TrayContext : ApplicationContext {
     [StructLayout(LayoutKind.Sequential)] struct RawInputDevice { public ushort UsagePage,Usage; public uint Flags; public IntPtr Target; }
     [StructLayout(LayoutKind.Sequential)] struct RawInputHeader { public uint Type,Size; public IntPtr Device,WParam; }
     [DllImport("user32.dll",SetLastError=true)] static extern bool RegisterRawInputDevices(RawInputDevice[] devices,uint count,uint size);
+    [DllImport("user32.dll",SetLastError=true)] static extern uint GetRegisteredRawInputDevices([In,Out] RawInputDevice[] devices,ref uint count,uint size);
     [DllImport("user32.dll")] static extern uint GetRawInputData(IntPtr hRawInput,uint command,byte[] data,ref uint size,uint headerSize);
     [DllImport("user32.dll",SetLastError=true)] static extern uint GetRawInputDeviceInfoW(IntPtr hDevice,uint command,IntPtr data,ref uint size);
     internal TrayContext(EventWaitHandle signal,bool manage) {
@@ -410,12 +436,21 @@ internal sealed class TrayContext : ApplicationContext {
             if(position<0 || position>3) throw new InvalidDataException("Invalid TaskbarPosition setting");
         }
         // Establish the UI synchronization context before starting asynchronous HID work.
+        dispatcher.Show(); // off-screen 1x1; required before raw input can target it
         var handle=dispatcher.Handle;
         // Raw input sink: every mouse movement reports its device so the pill
         // can follow whichever mouse the user is actually holding.
         var rid=new RawInputDevice[1];
         rid[0]=new RawInputDevice { UsagePage=1,Usage=2,Flags=0x100,Target=handle }; // usagePage 1 generic desktop, usage 2 mouse, INPUTSINK
-        rawInputOk=RegisterRawInputDevices(rid,1,(uint)Marshal.SizeOf(typeof(RawInputDevice)));
+        uint ridSize=(uint)Marshal.SizeOf(typeof(RawInputDevice));
+        rawInputOk=RegisterRawInputDevices(rid,1,ridSize);
+        // Ask the system back what it recorded: a TRUE from the call plus an empty
+        // registry would mean the registration was quietly dropped.
+        {
+            var probe=new RawInputDevice[8]; uint probeCount=8;
+            uint got=GetRegisteredRawInputDevices(probe,ref probeCount,ridSize);
+            rawRegInfo="got="+got+" count="+probeCount+(probeCount>0 ? (" firstTarget="+probe[0].Target+" flags="+probe[0].Flags+" usage="+probe[0].UsagePage+","+probe[0].Usage) : "");
+        }
         dispatcher.OnMessage=delegate(Message m) { if(m.Msg==0x00FF) HandleRawInput(m); };
         Microsoft.Win32.SystemEvents.UserPreferenceChanged+=OnPreferenceChanged;
         timer.Interval=250; timer.Tick+=Tick; timer.Start();
@@ -433,6 +468,7 @@ internal sealed class TrayContext : ApplicationContext {
         });
     }
     void HandleRawInput(Message m) {
+        rawSeen++;
         try {
             // RID_INPUT needs header + RAWMOUSE, not just the header; an
             // undersized buffer plus a busy UI thread (settings opening) is a
@@ -446,19 +482,25 @@ internal sealed class TrayContext : ApplicationContext {
             string path;
             if(!rawNames.TryGetValue(hDevice,out path)) {
                 uint size=0;
-                if(GetRawInputDeviceInfoW(hDevice,0x20000007,IntPtr.Zero,ref size)==unchecked((uint)-1) || size<2) { rawNames[hDevice]=null; return; }
-                var buf=Marshal.AllocHGlobal((int)size+16);
+                if(GetRawInputDeviceInfoW(hDevice,0x20000007,IntPtr.Zero,ref size)==unchecked((uint)-1)) { rawInputError="Raw device name size: "+Marshal.GetLastWin32Error(); return; }
+                if(size<2) { rawInputError="Raw device name is empty"; return; }
+                // RIDI_DEVICENAME counts UTF-16 characters while AllocHGlobal counts
+                // bytes: size+16 bytes let the API write ~2x past the block and ntdll
+                // aborted the process with 0xC0000374 within minutes of real mouse
+                // input. 9993e95 fixed this, 033c229 rolled it back - never regress.
+                var buf=Marshal.AllocHGlobal(checked(((int)size+16)*sizeof(char)));
                 try {
                     uint cap=size+16;
-                    if(GetRawInputDeviceInfoW(hDevice,0x20000007,buf,ref cap)==unchecked((uint)-1) || cap>size+16) { rawNames[hDevice]=null; return; }
+                    if(GetRawInputDeviceInfoW(hDevice,0x20000007,buf,ref cap)==unchecked((uint)-1)) { rawInputError="Raw device name: "+Marshal.GetLastWin32Error(); return; }
+                    if(cap>size+16) { rawInputError="Raw device name exceeds capacity"; return; }
                     path=Marshal.PtrToStringUni(buf);
                 } finally { Marshal.FreeHGlobal(buf); }
-                rawNames[hDevice]=null;
-                if(path==null) return;
+                if(path==null) { rawInputError="Raw device name is null"; return; }
                 rawNames[hDevice]=path;
             }
             if(path==null) return;
             string key=state.KeyForRawPath(path.ToLowerInvariant());
+            rawLast=path+" => "+(key ?? "(unmatched)");
             if(key!=null) state.SetActive(key);
         } catch { }
     }
@@ -513,7 +555,7 @@ internal sealed class TrayContext : ApplicationContext {
         }
         string status=visible ? text : "未连接或电量暂不可用\n"+failure;
         if(manager!=null && !manager.IsDisposed) UpdateManagerDisplay(visible);
-        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nActiveKey="+(state.ActiveKey??"(none)")+"\nRawInput="+(rawInputOk?"on":"off")+"\nDevices="+state.Describe(now)+"\nPollInterval="+pollInterval+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
+        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nActiveKey="+(state.ActiveKey??"(none)")+"\nRawInput="+(rawInputOk?"on":"off")+"\nDispatcherMsgs="+dispatcher.Total+"\nDispatcherRaw="+dispatcher.Raw+"\nRawSeen="+rawSeen+"\nRawReg="+rawRegInfo+"\nTokens="+state.TokenDump+"\nRawLast="+rawLast+"\nRawInputError="+rawInputError+"\nDevices="+state.Describe(now)+"\nPollInterval="+pollInterval+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
         if(diagnostic!=lastStatus) {
             try { File.WriteAllText(statusPath,DateTimeOffset.Now.ToString("o")+"\n"+diagnostic,Encoding.UTF8); }
             catch(IOException ex) { ShowFileError(ex.Message); }
@@ -690,10 +732,15 @@ internal sealed class TrayContext : ApplicationContext {
                 var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 // Live battery mark (design doc §3.3): the window's own gauge,
                 // never the static exe icon - the shell fills with the reading.
+                // manager.Scale already enlarged the panel, so paint inside the
+                // 26 DIP design space; raw device pixels drew it at 2/3 size at
+                // 150% and left a 20 DIP gap before the heading.
+                float mk=mark.Width/26f;
+                if(mk>0) g.ScaleTransform(mk,mk);
                 int level=Math.Max(0,managerLevel);
                 Color shell=level<=0 ? border : level<=10 ? MouseBattery.Ui.Red(light) : level<=20 ? MouseBattery.Ui.Yellow(light) : accent;
                 using(var pen=new Pen(shell,1.6f)) using(var path=PositionPicker.RoundPath(new RectangleF(1,2,20,20),5f)) g.DrawPath(pen,path);
-                using(var b=new SolidBrush(shell)) { g.FillRectangle(b,22,8,3,8); if(level>0) { int h=(int)(16*level/100f); if(h>1) using(var path=PositionPicker.RoundPath(new RectangleF(4.5f,3+16-h,13,h),2f)) g.FillPath(b,path); } }
+                using(var b=new SolidBrush(shell)) { g.FillRectangle(b,22,8,3,7); if(level>0) { int h=(int)(16*level/100f); if(h>1) using(var path=PositionPicker.RoundPath(new RectangleF(4.5f,3+16-h,13,h),2f)) g.FillPath(b,path); } }
             };
             var heading=new Label { Text="鼠标电量",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeDisplayTitle),FontStyle.Bold),Location=new Point(58,headerY),AutoSize=true };
             var subtitle=new Label { Text="任务栏与启动设置",Font=new Font("Microsoft YaHei UI",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.Overlay(background,255,MouseBattery.Ui.WithAlpha(muted,210)),Location=new Point(58,headerY+26),AutoSize=true };
@@ -711,9 +758,17 @@ internal sealed class TrayContext : ApplicationContext {
                 controls.Add(banner);
                 bodyY+=70;
             }
+            // Card A reserves its bottom 48 DIP for the companion line
+            // (design doc §3.4). With a single mouse that row is collapsed and
+            // the card bottom reads as an empty band, so centre the block.
+            long layoutNow=uptime.ElapsedMilliseconds;
+            string layoutTip=state.Tooltip(layoutNow);
+            int layoutNl=layoutTip.IndexOf('\n');
+            bool layoutCompanion=!degraded && state.Visible(layoutNow) && layoutNl>=0 && layoutNl+1<layoutTip.Length;
+            int aPad=layoutCompanion ? 0 : 14;
             var statusCard=new RoundedPanel(surface,border) { Location=new Point(20,bodyY),Size=new Size(MouseBattery.Ui.WidthCardWindow,172) };
-            managerDevice=new Label { Location=new Point(20,20),Size=new Size(320,24),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeHeading),FontStyle.Bold),ForeColor=MouseBattery.Ui.Overlay(surface,255,MouseBattery.Ui.WithAlpha(foreground,235)),AutoEllipsis=true ,BackColor=Color.Transparent};
-            chip=new Panel { Location=new Point(380,18),Size=new Size(120,20),BackColor=Color.Transparent };
+            managerDevice=new Label { Location=new Point(20,20+aPad),Size=new Size(320,24),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeHeading),FontStyle.Bold),ForeColor=MouseBattery.Ui.Overlay(surface,255,MouseBattery.Ui.WithAlpha(foreground,235)),AutoEllipsis=true ,BackColor=Color.Transparent};
+            chip=new Panel { Location=new Point(380,18+aPad),Size=new Size(120,20),BackColor=Color.Transparent };
             chip.Paint+=delegate(object sender,PaintEventArgs e) {
                 var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAlias;
@@ -731,7 +786,7 @@ internal sealed class TrayContext : ApplicationContext {
                 using(var font=new Font("Segoe UI",MouseBattery.Ui.SizeFaint,FontStyle.Regular,GraphicsUnit.Pixel))
                 using(var b=new SolidBrush(MouseBattery.Ui.IdentityInk(gamingNow,light))) g.DrawString(gamingNow?"PRO X":"Signature",font,b,new RectangleF(20,0,w-28,20),mid);
             };
-            managerReadout=new Panel { Location=new Point(20,46),Size=new Size(220,56),BackColor=Color.Transparent };
+            managerReadout=new Panel { Location=new Point(20,46+aPad),Size=new Size(220,56),BackColor=Color.Transparent };
             managerReadout.Paint+=delegate(object sender,PaintEventArgs e) {
                 var g=e.Graphics; g.TextRenderingHint=System.Drawing.Text.TextRenderingHint.AntiAlias;
                 if(string.IsNullOrEmpty(readoutText)) return;
@@ -756,10 +811,10 @@ internal sealed class TrayContext : ApplicationContext {
                     }
                 }
             };
-            managerCharge=new Label { Location=new Point(300,55),Size=new Size(200,18),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),ForeColor=MouseBattery.Ui.Overlay(surface,255,MouseBattery.Ui.WithAlpha(muted,220)),TextAlign=ContentAlignment.MiddleRight ,BackColor=Color.Transparent};
-            managerConnection=new Label { Location=new Point(300,75),Size=new Size(200,16),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.Overlay(surface,255,MouseBattery.Ui.WithAlpha(muted,190)),TextAlign=ContentAlignment.MiddleRight,AutoEllipsis=true ,BackColor=Color.Transparent};
-            managerTrack=new Panel { Location=new Point(20,110),Size=new Size(MouseBattery.Ui.WidthCardContent,MouseBattery.Ui.HeightTrackBand),BackColor=Color.Transparent,AccessibleName="当前电量刻度" };
-            managerCompanion=new Label { Location=new Point(20,134),Size=new Size(480,17),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.Overlay(surface,255,MouseBattery.Ui.WithAlpha(muted,190)),Visible=false ,BackColor=Color.Transparent};
+            managerCharge=new Label { Location=new Point(300,55+aPad),Size=new Size(200,18),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeBody)),ForeColor=MouseBattery.Ui.Overlay(surface,255,MouseBattery.Ui.WithAlpha(muted,220)),TextAlign=ContentAlignment.MiddleRight ,BackColor=Color.Transparent};
+            managerConnection=new Label { Location=new Point(300,75+aPad),Size=new Size(200,16),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.Overlay(surface,255,MouseBattery.Ui.WithAlpha(muted,190)),TextAlign=ContentAlignment.MiddleRight,AutoEllipsis=true ,BackColor=Color.Transparent};
+            managerTrack=new Panel { Location=new Point(20,110+aPad),Size=new Size(MouseBattery.Ui.WidthCardContent,MouseBattery.Ui.HeightTrackBand),BackColor=Color.Transparent,AccessibleName="当前电量刻度" };
+            managerCompanion=new Label { Location=new Point(20,134+aPad),Size=new Size(480,17),Font=new Font("Segoe UI Variable Text",MouseBattery.Ui.PtFromDip(MouseBattery.Ui.SizeMeta)),ForeColor=MouseBattery.Ui.Overlay(surface,255,MouseBattery.Ui.WithAlpha(muted,190)),Visible=false ,BackColor=Color.Transparent};
             managerTrack.Paint+=delegate(object sender,PaintEventArgs e) {
                 var g=e.Graphics; g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 float k=managerTrack.Width/(float)MouseBattery.Ui.WidthCardContent;

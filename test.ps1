@@ -17,3 +17,14 @@ $recoverySources = @('Battery.cs','RecoveryTests.cs') | ForEach-Object { Join-Pa
 if ($LASTEXITCODE -ne 0) { throw "Recovery test build failed: $LASTEXITCODE" }
 & "$root\build\RecoveryTests.exe" | Tee-Object -FilePath "$root\evidence\recovery-tests.txt"
 if ($LASTEXITCODE -ne 0) { throw "Recovery tests failed: $LASTEXITCODE" }
+
+# Regression gate: RIDI_DEVICENAME is measured in UTF-16 characters while
+# AllocHGlobal counts bytes. 9993e95 fixed the mismatch, 033c229 rolled it
+# back and the process died with 0xC0000374 - keep the probe in the gate.
+$probe = Join-Path $PSScriptRoot 'tools\Test-RawInputNameBuffer.ps1'
+if (Test-Path $probe) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $probe -OutputDirectory "$root\evidence\raw-name-probe" | Tee-Object -FilePath "$root\evidence\raw-name-buffer.txt"
+    if ($LASTEXITCODE -ne 0) { throw "Raw Input device-name buffer probe failed (heap overflow)" }
+} else {
+    Write-Warning 'Raw Input device-name probe missing; gate skipped'
+}

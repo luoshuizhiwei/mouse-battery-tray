@@ -195,15 +195,26 @@ internal sealed class DisplayState {
     // instance formats differ (vid_046d vs the GATT-prefixed vid&02046d form).
     // Bolt-hosted devices are further distinguished by their pairing index,
     // which raw input exposes in the parent hub instance segment.
+    internal string TokenDump { get {
+        var sb=new System.Text.StringBuilder();
+        foreach(var v in devices.Values) if(v.Last!=null) sb.Append(v.Last.Name+"|"+v.Token+"; ");
+        return sb.ToString();
+    } }
     internal string KeyForRawPath(string rawPath) {
         string token=TokenOf(rawPath);
         if(token==null) return null;
         string full=token+":"+BoltIndexOf(rawPath);
+        // Raw input reports the mouse interface (MI_00) while the battery reading
+        // comes from the vendor interface (MI_02), so the interface suffix in the
+        // key never matches. Exact key first; otherwise accept the product token
+        // when exactly one device carries it.
+        string tokenKey=null; int tokenHits=0;
         foreach(var v in devices.Values) {
             if(v.Last==null) continue;
             if(v.Token==full || (token=="c548" && v.Token.EndsWith(":c548"))) return v.Last.UnitId;
+            if(v.Token!=null && v.Token.StartsWith(token+":")) { tokenHits++; tokenKey=v.Last.UnitId; }
         }
-        return null;
+        return tokenHits==1 ? tokenKey : null;
     }
     static string BoltIndexOf(string path) {
         if(path==null) return "";

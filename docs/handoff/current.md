@@ -1,15 +1,15 @@
 # 鼠标电量工具 — 当前交接
 
-更新：2026-11-16。本轮按 unslop 走查修复用户截图指出的设置窗与悬停卡缺陷（Catppuccin 契约内的精修，非改品牌），已晋升正式版。历史轮次见各 dated 交接与 [track-flicker](2026-11-06-track-flicker.md)、[soft-colors](2026-11-06-soft-colors.md)、[settings-redesign](2026-11-06-settings-redesign.md)。
+更新：2026-11-16。本轮按 unslop 走查修复用户截图指出的设置窗与悬停卡缺陷（Catppuccin 契约内的精修，非改品牌），已晋升正式版；17:25 又修复造成 0xC0000374 崩溃的 Raw Input 分配回滚，并补齐高 DPI 下头部标记/开关尺寸与单鼠标卡片留白；21:5x 修复「任务栏最左侧」把左端刷成黑块的布局缺陷。历史轮次见各 dated 交接与 [track-flicker](2026-11-06-track-flicker.md)、[soft-colors](2026-11-06-soft-colors.md)、[settings-redesign](2026-11-06-settings-redesign.md)。
 
 ## 当前正式交付
 
 - EXE：`E:\Agent任务\进行中\MouseBattery\app\MouseBattery.exe`。
-- EXE SHA256：`D36F01B17F2C59309179A19CE9B685A12B8B7502A6C3B250C688FA933CB757D1`。
-- 内嵌 DLL SHA256：`54E9CD7EF1CAA24DF803F5B1175A8905493DEA4F56654A2133A6661938257DBE`（运行时组件目录同名）。
+- EXE SHA256：`968DE28023DA62979411CD67A5AC9BD90B73377971EA8184AC312F0AB8551F6D`。
+- 内嵌 DLL SHA256：`4EA5227983BC1E66D04C3A36EF2A814BA81780971AA31E8E9810B494424164B2`（运行时组件目录同名）。
 - 回滚备份：`E:\Agent任务\进行中\MouseBattery\robust-v3.2\baseline\MouseBattery-B1705B08.exe`（旧 EXE 全哈希 `B1705B083D7AEA847BC8A07AEDFCCF3DBADA2A0CF1FF2B43DD939271BF611158`）；更早一轮备份 `MouseBattery-60E6D4FA.exe` 仍在。
-- 18:15:13 启动 PID 49396；真实 Signature Plus M750 L 85%、Bolt 接收器、RawInput=on、RawInputError=（空）、Startup=True。Explorer 未重启。
-- `Native=initialized | visible position=0 percent=85 … pillWidth=52 pillHeight=28 … tickHigh=255,255,255 tickCritical=255,255,255 … kind=office`：新 DLL 的轨内中性刻度（浅色=卡面白）已在正式版生效。
+- 21:51:38 启动 PID 5428；活动设备 PRO X 2 DEX 53%、2.4G 无线、position=3（任务栏最左侧）、RawInput=on、RawInputError=（空）、Startup=True。Explorer 未重启。18:15 的 `D36F01B1…` 已被本轮覆盖（源码在 758d2f3，可重建）。
+- `Native=initialized | visible position=3 percent=53 x=275.333344 width=56 height=48 … pillWidth=52 pillHeight=28 … kind=gaming`：position 3 走 Canvas 悬浮（无暗块），读数距左端 TrafficMonitor 面板 14 DIP。
 - 本轮证据：`E:\Agent任务\进行中\MouseBattery\design-sheet\settings\settings-candidate-20261116-180958.png`（150% 真机设置窗）、`settings\sheet-S-light/dark.png`（控件状态矩阵）、`dwell-20261116-181346\now.png`（真机悬停卡）、`standalone\candidate\build-manifest.json`。
 
 ## 2026-11-16 圈出缺陷二次精修（任务栏示意图与轨内刻度）
@@ -22,6 +22,102 @@
 - 未验证：暗色主题真机设置窗（系统浅色，暗色由控件矩阵覆盖）、隔夜/睡眠唤醒、Explorer 外部重启后自动恢复、≥30 分钟无崩溃观察。
 - 遗留建议（未改）：companion 行双列+身份点（§2.2）、悬停胶囊数字改身份色（§4.2）。
 - 改动文件：src/Program.cs（仅示意图/NotchHalf/轨刻 hunk）、src/Ui.cs、native/TaskbarView.h、src/AppearanceProbe.cs、docs/proposals/catppuccin-design.md。并行轮的 Raw Input/高 DPI/aPad hunk 与 test.ps1 保留未提交，未混入本提交。512 字节 ABI、堆修复表达式、Battery.cs/Hid.cs/TaskbarPublisher.cs/NativeHost.* 未动。
+
+## 2026-11-17 双鼠标"跟随正在使用"修复（匹配规则）
+
+- **更正上一节的错误结论**：WM_INPUT 一直都有投递，之前几次测到 `RawSeen=0` 是因为那几十秒用户没有移动物理鼠标（注入的 SendInput 不算真实设备输入，且其 `hDevice=0`）。加了 `GetRegisteredRawInputDevices` 回读后确认注册有效（`got=1 flags=256 usage=1,2`），随后 `RawSeen` 随真实移动正常增长。
+- 真正的 bug 在匹配：原始输入报的是鼠标接口 `MI_00`，而电量读数来自厂商接口 `MI_02`。`KeyForRawPath` 用 `token:接口序号` 精确比较，于是永远对不上——`status.txt` 里 `ActiveKey` 从 11-16 起一直是 `(none)`，这就是"在用游戏鼠标却显示办公鼠标"的原因。
+- 修复：先做精确匹配，失败时退化为按产品 token 唯一命中（`v.Token.StartsWith(token+":")`，且只有一个设备时采用）。设备内部键实测为 `PRO X 2 DEX|c0a0:02`、`Signature Plus M750 L|c548:02`。
+- 离线验证（临时 csc 编译 Battery.cs + 测试 Main）：raw PRO X（MI_00）→ `unit-prox`；raw M750 → `unit-m750`，两者都命中。
+- 真机确认（用户实测通过）：`ActiveKey=02-02-5C-94`、`RawLast=…MI_00… => 02-02-5C-94`、`Devices=PRO X 2 DEX 96% 正在充电 有线 [活动]`、胶囊显示 96%；`RawSeen=4730`。晃动游戏鼠标时读数跟随它，晃动办公鼠标时跟随另一只。
+- status.txt 现保留 `RawSeen` / `RawLast` / `RawReg` / `Tokens` 四个诊断字段。
+
+## 2026-11-17 双鼠标"跟随正在使用"排查（未解决）
+
+- 现象：两只鼠标同时连接（PRO X 2 DEX 有线充电中 + M750 Bolt），用户在用游戏鼠标，胶囊却显示办公鼠标。
+- 关键证据：`status.txt` 里 `ActiveKey=(none)` —— 原始输入的活跃设备标记**从未成功设置过**，不是这轮改坏的。
+- 加了三个诊断计数：`DispatcherMsgs`（消息窗口收到的消息数）、`DispatcherRaw`（其中 WM_INPUT 数）、`RawSeen`（HandleRawInput 调用数）。实测 `DispatcherMsgs=43`、`DispatcherRaw=0`、`RawSeen=0` —— 窗口活着、`RegisterRawInputDevices` 返回成功，但**一条 WM_INPUT 都没有**。
+- 已排除：隐藏窗口（原先）、屏外 1×1 实窗口、屏内 1×1 实窗口、以及设置窗当前台时；四种情况全部 0。判断为该系统上 `RIDEV_INPUTSINK` 的 WM_INPUT 不投递到这个进程（与本项目代码路径无关）。
+- 结论：靠 raw input 自动判断"正在用哪只"这条路暂时走不通。可选替代：① 某只鼠标插拔/充电状态变化时把它切为当前（半自动）；② 设置窗里手动指定"优先显示哪只"（兜底）。
+- 诊断字段 `DispatcherMsgs`/`DispatcherRaw`/`RawSeen`/`RawLast` 已留在 status.txt 里，方便以后复测。
+
+## 2026-11-17 边框流光尝试（未落地）
+
+- 需求：充电时外框有一道光沿边框转一圈。
+- 方案一（旋转渐变）：`LinearGradientBrush` + `RelativeTransform` 旋转，动画 `RotateTransform.Angle`。光带不出现；把旋转中心从像素 (26,14) 改成相对 (0.5,0.5) 后仍不动。
+- 方案二（虚线偏移）：`Path` + `EllipseGeometry` 画满一圈，`StrokeDashArray` 留一段亮弧，动画 `StrokeDashOffset 0→-131`（并置 `EnableDependentAnimation(true)`）。同样不动。
+- 判据：连拍 8 帧（300 ms 间隔）对比边框左/上/右/下四点亮度——四点完全同步起伏（172→190→184→167→151→128→152→169），即只有呼吸环在呼吸；流光若在走应出现相位差，实测左右差始终 ≈0。
+- 结论：任务栏 XAML 宿主只放行合成属性动画（`UIElement.Opacity` 能动），对 Brush/几何类 dependent animation 直接忽略。这是宿主限制，不是写法问题。
+- 现状：流光代码已移除，呼吸保留（`charging` 1..3 触发）；未充电时该区域青色像素实测 0。
+- 若继续：唯一有希望的方向是把光段做成独立 UIElement，用 `CompositeTransform`（Rotation + ScaleY≈0.52）拼出椭圆轨道，全部走合成属性；需再一轮实现与验证，且不保证宿主放行。
+
+## 2026-11-17 菜单收窄与首帧闪烁修复
+
+- 宽度：卡片 176 → 144 DIP（实测白色区间 215 px @150%，即 143 DIP），内容仍是 32 行高、16 图标、12 号字，右侧留白不再空旷。
+- 首帧闪烁三处原因，都改了：① 原来先 `SWP_SHOWWINDOW` 显示、再 `SetWindowRgn` 裁圆角，中间会露出一帧方形白框——改为先定位、设圆角，最后 `ShowWindow(SW_SHOWNOACTIVATE)`；② `WM_ERASEBKGND` 返回 1 且 `WM_PAINT` 走内存 DC 双缓冲，消除"先擦白、再画字"的中间态；③ 绘制改到兼容位图再 `BitBlt`。
+- 同时修掉一个自己引入的 bug：`SetWindowPos` 里带了 `SWP_NOZORDER`，它会吞掉 `HWND_TOPMOST`，窗口因此不置顶、会被前台窗口盖住——去掉该标志。
+- 部署教训：命令链里 `Stop-Process` 在目标不存在时返回非 0，会中断后面的 `&& cp`，导致"部署看起来成功、exe 其实没换"。此后 cp 与 exe 哈希必须单独校验。
+- 验证：白色区间 1929..2143（215 px）；鼠标扫过第二行 (255,255,255)→(242,243,244)；点「设置」设置窗实际打开。
+
+## 2026-11-17 自绘菜单最终方案（普通窗口 + 圆角 region）
+
+- 三次失败的原因（记下来，别再重走）：
+  1. GDI+ 画到 HDC 不写 alpha 通道，`UpdateLayeredWindow` 收到全 0 alpha → 窗口"显示成功"但整张卡片透明。
+  2. **Explorer 里 native DLL 会累积多个实例**：不同哈希名的 DLL 各自驻留、旧 worker 不随 reader 退出而停止，实测并存 4 个、各有一个菜单窗口。新注入的代码根本没有接管任务栏——这是这几天"改了没效果"的主因，不是改动本身无效。
+  3. 改为普通窗口（去掉 `WS_EX_LAYERED`）+ `CreateRoundRectRgn` 裁剪圆角 + `WM_PAINT` 直绘，像素一次到位。
+- 运维结论：**每次改 native 组件，必须重启一次资源管理器（explorer.exe）**，否则旧实例继续跑在新代码之前。部署流程要带这一步。
+- 验证：右键 → 日志 `menu-owned-shown`、卡片采样 (255,255,255)；鼠标扫过第二行 → (255,255,255)→(242,243,244)；点「设置」→ 设置窗实际打开。
+- 已知取舍：无软阴影（region 裁剪做不了）；Esc 不能关（无焦点窗口），靠 80ms 定时器 + `GetAsyncKeyState` 检测外部点击关闭。
+- 改动：`native/TaskbarView.h`（OwnedMenu 模块）；`build-standalone-native.ps1` 增 `-lgdiplus -lgdi32`。
+
+## 2026-11-17 右键菜单改为自绘窗口
+
+- 背景：系统 MenuFlyout 改不动（presenter 只要设一个 setter 就完全不弹），XAML Flyout 在任务栏上方收不到指针事件。用户在「独立窗口」与「删掉菜单」之间选了前者。
+- 实现：native 新增 `OwnedMenu` 模块。独立线程建 `WS_POPUP|WS_EX_LAYERED|WS_EX_TOPMOST|WS_EX_NOACTIVATE` 窗口，GDI+ 画 32bpp DIB（外 12 圆角、1px Border α115、6 层软阴影、32 DIP 行高、16 DIP MDL2 图标、Microsoft YaHei UI 12 号、分组用 4 DIP 留白），`UpdateLayeredWindow` 上屏，绘制后手工预乘 alpha；行 hover 立即重绘；`WM_LBUTTONUP` 判定行号后 `Launch` 对应参数。关闭用 80ms 定时器 + `GetAsyncKeyState` 检测外部点击——不用 `SetCapture`，因为 no-activate 窗口握不住指针，且第一次点击不该穿到下层。
+- 定位：XAML 侧右键时用 `host.TransformToVisual(XamlRoot.Content())` + 任务栏窗口 rect + `GetDpiForWindow` 算出胶囊顶边中点（实测 dpi=144、anchor 2036,1528），菜单底边对齐、水平居中。
+- 验证：窗口 rect 实测 `1886,1348 300x198`（144 DPI 换算正确）；卡片内五个采样点实测 (255,255,255)，说明确实画到屏幕上；日志 `menu-owned-shown` / `menu-paint dst=1886,1348 size=300,198 dpi=144`。
+- 未验证：hover 高亮与点击动作的注入复验不稳定（多次注入测试中胶囊有时处于隐藏态，右键落空），需要用户实点确认。
+- 构建依赖：`build-standalone-native.ps1` 追加 `-lgdiplus -lgdi32`。
+
+## 2026-11-17 充电呼吸描边
+
+- 需求：鼠标充电时给胶囊一点动效，克制、不干扰读数。方案由用户在三个选项里选定「描边呼吸」。
+- 实现：pill 外包一层 52×28 Grid，底下叠一个 52×28、圆角 10、1px 的环；只在 `charging` 为 1..3（充电中）时出现，`Opacity` 在 0.30↔0.95 之间 1.2s 单程 + AutoReverse（2.4s 一个呼吸周期）、Forever 循环；颜色取身份色（office=Sapphire / gaming=Mauve），与 hover 玻璃同源。环 `IsHitTestVisible(false)`，不抢 hover、右键和 ToolTip。
+- 验证（动画真的在 Explorer 的 XAML 里跑）：临时把门控改成常开，在真实任务栏连拍 8 帧（320ms 间隔），描边蓝色余量 78→105→121→94→68→44→59→84，呈约 2.4s 周期；恢复门控后未充电状态该区域蓝色像素为 0、环 `Visibility=Collapsed`。
+- 未验证：真实硬件 `charging=1..3` 的端到端。测试宿主注入的 charging 没能进入 snapshot（日志里 `charging=0`），所以"充电才出现"这一步只验证了门控代码路径，等价效果靠临时常开模式证明。
+- 改动：`native/TaskbarView.h`（View 增 `glowRing`/`glowStory`/`glowOn`，pill 外层 Grid，Update 门控，Remove 停止动画）。
+
+## 2026-11-16 右键菜单改为应用卡片（unslop）
+
+- 现象：右键胶囊弹出的是系统 MenuFlyout 默认外观——纯白不透明卡、一条贯穿分隔线、20 DIP 图标、字号与行高都不在应用的卡片体系里；和任务栏自己的 #F3F3F3 菜单并排时读作网页弹层。
+- 方向（判定为轻度 slop，走 polish）：角色 = 安静、克制、精确；世界 = Windows 11 任务栏系统表面 + Catppuccin 纸白与发丝线；签名 = 1px 发丝线 + 外 12/内 8 嵌套圆角，分组用留白不用横线。
+- 实现：保留 MenuFlyout（系统输入路径），用 `MenuFlyoutPresenterStyle` 把表面换成 `CatSurface` 底 + `CatBorder α115` 1px 描边；三项统一 MinHeight 32、Padding 8/12、字号 12、Microsoft YaHei UI 字体、FontIcon 16；去掉 `MenuFlyoutSeparator`，退出项用 `Margin 4` 分组；`Update` 里按明暗主题刷新 brush（此前菜单完全不跟主题）。
+- 踩到的坑：presenter 上加 `CornerRadius`/`Padding`/`MinWidth` setter 后菜单**完全不弹**（无异常、无日志），只保留 Background/BorderBrush/BorderThickness 才恢复；圆角沿用系统 presenter 默认。
+- 未采用的路（实测不可行）：完全自绘 Flyout。任务栏的 XamlRoot 只有 48 DIP 高，`ShowAt` 到栏外的卡片能画出来但收不到指针事件——右键、左键、悬停全部无响应（native-worker 日志确认 `ShowAt` 成功、`RightTapped`/`ContextRequested` 均触发）；要做彻底自绘只能改用 Win32 分层窗口，成本与输入路由风险另计。
+- 未验证：菜单项点击。桌面鼠标在验证时进入 HID 超时休眠（`--diagnose` 返回 `C54D: HID response timeout`），无法用注入输入复验；交互路径与改造前一致，仍走 MenuFlyout 的 Click。
+
+## 2026-11-16 任务栏最左侧（position 3）布局修订
+
+- 现象：位置改成「任务栏最左侧」后，任务栏左端出现一块纯黑矩形（约 325 DIP 宽），本机 TrafficMonitor 的透明面板被衬成黑底，「53 %」深灰读数几乎不可读；读数与监控数据只隔 8 DIP，读起来像那块面板里的第六项。
+- 根因：position 3 往任务栏 `RootGrid` 插入一个 `ExternalLeftWidth()+56` 像素宽的列，RootGrid 里铺满的背景层被 reindex 到列 1，新列没有背景 → 显示 XAML island 黑底；TrafficMonitor 是透明叠加，随之一起变黑。
+- 修复：不再插列。host 放进一个 `Canvas` overlay（Canvas 不占布局槽），`Canvas::SetLeft = ExternalLeftWidth()+kExternalGap`（14 DIP）、host 56×48；每 500ms 仅当左端外部窗口宽度变化时更新偏移。`ExternalLeftWidth` 去掉原先隐含的 `+8`，间距统一由 `kExternalGap` 控制。
+- 中途试过「host 作为跨列的 Grid 子元素」：暗块同样消失，但 ToolTipService 拿不到 56×48 的锚点，悬停卡不再出现（dwell 0/24）；改 Canvas 后卡片恢复（全屏截图可见 PRO X 2 DEX / 53% / 未充电 · 2.4G 无线）。
+- 验证：真实任务栏剖面 x=0..600 在 y=8/64 全为浅色（无暗块），TrafficMonitor 数据直接显示在浅灰任务栏上；UIA 边界 `L=413 T=1528 W=84 H=72`（56×48 DIP）；位置 0（未改动路径）dwell 16/24 帧有卡片。
+- 未验证：双鼠标伴随行、暗色任务栏、其它 DPI 档位。
+- 改动文件：`native/TaskbarView.h`（View 增 `overlay`/`leftPad`、`kExternalGap`、Insert/Remove/Update 的 position 3 分支）；EXE `968DE280…`、内嵌 DLL `4EA52279…`，与 758d2f3 的源码基线叠加。
+
+## 2026-11-16 崩溃回归修复（Raw Input 分配）
+
+- 现象：任务栏百分比与托盘图标在运行数分钟后整体消失，进程已不在，不会自动重启。
+- 证据：Application/1000 共 20 条 MouseBattery 崩溃，异常码 `0xC0000374`、故障偏移 `ntdll+0x112fc5`（11-13 起 18 条 + 11-16 16:59:38 / 17:00:20 两条，版本均为 4.5.1.0）。
+- 根因：`RIDI_DEVICENAME` 的 `pcbSize` 是 UTF-16 字符数，`src/Program.cs` 却按字节 `AllocHGlobal((int)size+16)` 分配；真实鼠标上报时越界写 63–79 字节，踩坏相邻堆块。9993e95 已修，033c229（11-14 16:30 任务栏全链修复）把它连同 `rawInputError` 一起回滚。
+- 修复：恢复 `AllocHGlobal(checked(((int)size+16)*sizeof(char)))`；恢复 `rawInputError` 并写入 `data/status.txt` 的 `RawInputError=`；设备名查询失败不再永久缓存 null，下次 WM_INPUT 重试。
+- 探针：`tools/Test-RawInputNameBuffer.ps1` 从生产源码提取到的表达式即 `checked(((int)size+16)*sizeof(char))`，4 台真实鼠标设备 PASS 4/4、`overwrittenBytesBeyondAllocation=0`；旧表达式对照 FAIL 4/4、越界 63–79 字节。
+- 门禁：`test.ps1` 末尾新增 Raw Input canary stage，同类回滚会当场失败（此前 `test.ps1` 不含该探针，11-14 的回滚静默通过）。
+- 高 DPI 视觉（150%，客户区 560×502 DIP）：头部电池标记原按设备像素绘制（实测 24×21 px），改画在 26 DIP 设计空间后实测 37×31 px（含 nub 宽 25 DIP、高 20 DIP），与标题间距回到规格 12 DIP；「登录后自启」开关原轨道实测 40×20 px，加 `k=Height/26f` 设计变换后实测 61×30 px = 40×20 DIP。
+- 单鼠标卡片：`managerCompanion` 收起时卡 A 底部空 48 DIP，现按当前 tooltip 是否有第二行决定 `aPad`（有伴随设备 0、单设备 14），内容与伴随行同步下移，上下留白 34/34 DIP。
+- 部署：`app\MouseBattery.exe` 由 `--exit` 优雅退出后复制、SHA256 校验 `B1705B083D7AEA847BC8A07AEDFCCF3DBADA2A0CF1FF2B43DD939271BF611158`、以 `--background` 启动（PID 41448，17:24:57）；旧版备份在 `patch-20261116\MouseBattery-app-before-20261116.exe` 与 `standalone\candidate\MouseBattery-prev-991728D5.exe`。桌面/开始菜单图标缓存已用 `ie4uinit.exe -show` 刷新。
+- 观察结果（21:56 补记）：17:25 首次部署修复版后至今，Application/1000 无新增 MouseBattery 崩溃（16:00 之后仅有 16:59:38 / 17:00:20 两条旧版记录）；其中 18:15 版（含同一修复）连续运行 3 小时 25 分，覆盖了旧版「3–5 分钟必崩」的窗口。仍未验证暗色主题真机设置窗、隔夜/睡眠唤醒。崩溃因果是「同一故障偏移 + 版本窗口对齐 + canary 越界 + 仓库既有 RCA」四重证据，不是现场可控复现。
 
 ## 2026-11-16 UI 走查修复（unslop）
 

@@ -20,10 +20,17 @@ static bool ReadableAddr(const void* p,SIZE_T n) {
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Xaml.Media.Animation.h>
+#include <gdiplus.h>
+#include <windowsx.h>
+#include <chrono>
 #include <winrt/Windows.UI.Xaml.Shapes.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
+#include <winrt/Windows.UI.Xaml.Interop.h>
+#include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Input.h>
+#include <winrt/Windows.System.h>
 #include <winrt/Windows.Foundation.Numerics.h>
 #include <atomic>
 #include <memory>
@@ -35,8 +42,12 @@ using namespace Windows::UI;
 using namespace Windows::UI::Xaml;
 using namespace Windows::UI::Xaml::Controls;
 using namespace Windows::UI::Xaml::Media;
+using namespace Windows::UI::Xaml::Media::Animation;
 
 namespace {
+// Owned layered menu; defined after Insert, declared here because Remove hides it.
+void OwnedMenuHide();
+void ShowOwnedMenu(bool light,bool startup,int anchorX,int anchorY,int dpi);
 struct Snapshot {
     uint32_t magic, sequence;
     uint64_t tick;
@@ -71,9 +82,14 @@ struct View {
     Windows::UI::Xaml::Shapes::Rectangle tickHigh{nullptr}, tickCritical{nullptr};
     Windows::UI::Xaml::Shapes::Ellipse nameHalo{nullptr}, nameDot{nullptr};
     FontIcon statusGlyph{nullptr};
+    Border glowRing{nullptr}; Storyboard glowStory{nullptr}; bool glowOn=false;
     ColumnDefinition column{nullptr},implicitColumn{nullptr};
-    MenuFlyout menu{nullptr}; MenuFlyoutItem settings{nullptr}, toggle{nullptr}, exit{nullptr};
-    event_token settingsToken{},toggleToken{},exitToken{},hoverEnter{},hoverExit{};
+    Canvas overlay{nullptr}; // position 3: absolute-positioning parent that adds no layout slot
+    double leftPad=-1.0; // position 3: DIP from the taskbar's left edge, cached so the
+                         // 500ms dispatch only touches XAML when the readout really moves
+    event_token menuOpenToken{};
+    bool startupState=true; // snapshot's startup flag, drives the menu label
+    event_token hoverEnter{},hoverExit{};
     // Pill color state kept so a pointer hover can lift the alphas without a
     // data dispatch; hover is the only affordance the tiny pill can carry.
     Color baseTop{},baseBottom{},baseStroke{};
@@ -120,6 +136,10 @@ HWND TaskbarWindow() {
     return pid==GetCurrentProcessId() ? window : nullptr;
 }
 
+// DIP between the right edge of the leftmost external taskbar window (on this
+// machine: TrafficMonitor's embedded panel) and our readout. 8 was too tight -
+// the bare 15 DIP numeral read as one more field of that panel.
+const double kExternalGap=14.0;
 double ExternalLeftWidth() {
     HWND taskbar=TaskbarWindow(); RECT taskbarRect{}; GetWindowRect(taskbar,&taskbarRect);
     struct Context { HWND taskbar; RECT rectangle; LONG end; } context{taskbar,taskbarRect,taskbarRect.left};
@@ -132,7 +152,7 @@ double ExternalLeftWidth() {
         if(rectangle.left<=c.rectangle.left+32 && rectangle.top<c.rectangle.bottom && rectangle.bottom>c.rectangle.top) c.end=std::max(c.end,rectangle.right);
         return TRUE;
     },(LPARAM)&context);
-    return context.end>taskbarRect.left ? (context.end-taskbarRect.left)*96.0/GetDpiForWindow(taskbar)+8.0 : 0.0;
+    return context.end>taskbarRect.left ? (context.end-taskbarRect.left)*96.0/GetDpiForWindow(taskbar) : 0.0;
 }
 
 FrameworkElement Find(FrameworkElement const& root,wchar_t const* name) {
@@ -221,11 +241,16 @@ void Launch(wchar_t const* argument) {
 void Remove() {
     if(!g_view) return;
     auto& v=*g_view;
-    v.menu.Hide();
-    v.settings.Click(v.settingsToken); v.toggle.Click(v.toggleToken); v.exit.Click(v.exitToken);
+    if(v.glowStory) v.glowStory.Stop();
+    OwnedMenuHide();
+    if(v.menuOpenToken) v.host.RightTapped(v.menuOpenToken);
     v.pill.PointerEntered(v.hoverEnter); v.pill.PointerExited(v.hoverExit);
     v.host.ContextFlyout(nullptr);
     uint32_t index=0;
+    if(v.overlay) {
+        if(v.parent.Children().IndexOf(v.overlay,index)) v.parent.Children().RemoveAt(index);
+        v.overlay=nullptr;
+    }
     if(v.parent.Children().IndexOf(v.host,index)) v.parent.Children().RemoveAt(index);
     if(v.column) {
         auto grid=v.parent.as<Grid>();
@@ -243,6 +268,180 @@ void Remove() {
     }
     NativeLog(L"Removed taskbar text and released its layout slot");
     g_view.reset();
+}
+
+
+// ---------------- owned right-click menu (GDI+, layered window) --------------
+// The stock MenuFlyout cannot be reshaped (any presenter style setter stopped it
+// from opening at all) and a XAML Flyout above the 48 DIP taskbar XamlRoot never
+// receives pointer input. A plain layered popup in this process owns drawing,
+// hit-testing and closing, so the card is entirely ours.
+struct OwnedMenu {
+    HWND hwnd=nullptr; HANDLE ready=nullptr; DWORD threadId=0;
+    bool light=true, startup=true, visible=false;
+    int hover=-1, anchorX=0, anchorY=0, dpi=96;
+};
+OwnedMenu g_menu;
+std::mutex g_menuLock;
+
+struct MenuMetrics { int cardW,cardH,rowH,pad,gap,shadow; };
+MenuMetrics Metrics() {
+    double s=g_menu.dpi/96.0;
+    MenuMetrics m{};
+    m.shadow=0; m.pad=(int)(4*s); m.gap=(int)(4*s); m.rowH=(int)(32*s);
+    m.cardW=(int)(144*s); m.cardH=m.pad*2+m.rowH*3+m.gap;
+    return m;
+}
+int MenuRowTop(MenuMetrics const& m,int row) { return m.pad+row*m.rowH+(row==2?m.gap:0); }
+int HitRow(int x,int y) {
+    MenuMetrics m=Metrics();
+    int cx=x-m.shadow, cy=y-m.shadow;
+    if(cx<m.pad || cx>m.cardW-m.pad) return -1;
+    for(int i=0;i<3;i++) { int top=MenuRowTop(m,i); if(cy>=top && cy<top+m.rowH) return i; }
+    return -1;
+}
+wchar_t const* RowGlyph(int row) { return row==0 ? L"\uE713" : row==1 ? L"\uE72C" : L"\uE7E8"; }
+wchar_t const* RowText(int row,bool startup) { return row==0 ? L"设置" : row==1 ? (startup ? L"关闭开机启动" : L"开启开机启动") : L"退出工具"; }
+
+void OwnedMenuHide() {
+    if(g_menu.hwnd && g_menu.visible) {
+        g_menu.visible=false; g_menu.hover=-1;
+        KillTimer(g_menu.hwnd,1);
+        ShowWindow(g_menu.hwnd,SW_HIDE);
+        WorkerDiag(L"menu-owned-hidden");
+    }
+}
+void OwnedMenuAction(int row) {
+    Launch(row==0 ? L"--manage" : row==1 ? L"--toggle-startup" : L"--exit");
+}
+void RoundPath(Gdiplus::GraphicsPath& p,float x,float y,float w,float h,float r) {
+    float d=r*2;
+    p.AddArc(x,y,d,d,180,90); p.AddArc(x+w-d,y,d,d,270,90);
+    p.AddArc(x+w-d,y+h-d,d,d,0,90); p.AddArc(x,y+h-d,d,d,90,90);
+    p.CloseFigure();
+}
+void OwnedMenuPaint(HDC hdc) {
+    if(!hdc) return;
+    MenuMetrics m=Metrics();
+    double s=g_menu.dpi/96.0;
+    bool gLight=g_menu.light;
+    Gdiplus::Color card = gLight ? Gdiplus::Color(255,255,255,255) : Gdiplus::Color(255,49,50,68);
+    Gdiplus::Color edge = gLight ? Gdiplus::Color(115,204,208,218) : Gdiplus::Color(115,69,71,90);
+    Gdiplus::Color ink  = gLight ? Gdiplus::Color(238,76,79,105) : Gdiplus::Color(238,205,214,244);
+    Gdiplus::Color sub  = gLight ? Gdiplus::Color(225,108,111,133) : Gdiplus::Color(225,166,173,200);
+    Gdiplus::Color hot  = gLight ? Gdiplus::Color(18,76,79,105) : Gdiplus::Color(22,205,214,244);
+    Gdiplus::Graphics g(hdc);
+    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    g.SetTextRenderingHint(Gdiplus::TextRenderingHintAntiAliasGridFit);
+    Gdiplus::GraphicsPath cardPath;
+    RoundPath(cardPath,0.0f,0.0f,(float)m.cardW,(float)m.cardH,(float)(12*s));
+    Gdiplus::SolidBrush cardBrush(card); g.FillPath(&cardBrush,&cardPath);
+    Gdiplus::Pen edgePen(edge,1.0f); g.DrawPath(&edgePen,&cardPath);
+    Gdiplus::FontFamily uiFam(L"Microsoft YaHei UI");
+    Gdiplus::FontFamily iconFam(L"Segoe MDL2 Assets");
+    Gdiplus::Font uiFont(&uiFam,12.0f*(float)s,Gdiplus::FontStyleRegular,Gdiplus::UnitPixel);
+    Gdiplus::Font iconFont(&iconFam,16.0f*(float)s,Gdiplus::FontStyleRegular,Gdiplus::UnitPixel);
+    Gdiplus::StringFormat left; left.SetAlignment(Gdiplus::StringAlignmentNear);
+    left.SetLineAlignment(Gdiplus::StringAlignmentCenter); left.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
+    for(int i=0;i<3;i++) {
+        int top=MenuRowTop(m,i);
+        if(g_menu.hover==i) {
+            Gdiplus::GraphicsPath rp;
+            RoundPath(rp,(float)m.pad,(float)top,(float)(m.cardW-m.pad*2),(float)m.rowH,(float)(6*s));
+            Gdiplus::SolidBrush hb(hot); g.FillPath(&hb,&rp);
+        }
+        Gdiplus::SolidBrush iconBrush(g_menu.hover==i ? ink : sub);
+        g.DrawString(RowGlyph(i),-1,&iconFont,Gdiplus::PointF((float)(m.pad+(int)(10*s)),(float)(top+m.rowH/2)),&left,&iconBrush);
+        Gdiplus::SolidBrush textBrush(ink);
+        g.DrawString(RowText(i,g_menu.startup),-1,&uiFont,Gdiplus::PointF((float)(m.pad+(int)(36*s)),(float)(top+m.rowH/2)),&left,&textBrush);
+    }
+    g.Flush();
+}
+LRESULT CALLBACK OwnedMenuProc(HWND h,UINT msg,WPARAM wp,LPARAM lp) {
+    switch(msg) {
+    case WM_APP+1: {
+        g_menu.visible=true; g_menu.hover=-1;
+        MenuMetrics m=Metrics();
+        double ms=g_menu.dpi/96.0;
+        int x=g_menu.anchorX-m.cardW/2, y=g_menu.anchorY-m.cardH;
+        // Size and round the window while it is still hidden, then show: showing
+        // first put an unclipped square frame on screen for one frame, which read
+        // as the card "flashing" as it opened.
+        SetWindowPos(h,HWND_TOPMOST,x,y,m.cardW,m.cardH,SWP_NOACTIVATE); // NOZORDER here would drop the TOPMOST request
+        HRGN rgn=CreateRoundRectRgn(0,0,m.cardW+1,m.cardH+1,(int)(24*ms),(int)(24*ms));
+        SetWindowRgn(h,rgn,TRUE);
+        ShowWindow(h,SW_SHOWNOACTIVATE);
+        InvalidateRect(h,nullptr,TRUE);
+        // No SetCapture: a no-activate window cannot hold the pointer, and the
+        // click that dismissed it would also reach whatever is underneath.
+        SetTimer(h,1,80,nullptr);
+        WorkerDiag(L"menu-owned-shown");
+        return 0; }
+    case WM_TIMER: {
+        // Light dismiss: a click anywhere outside the card closes it.
+        POINT p{}; GetCursorPos(&p);
+        RECT r{}; GetWindowRect(h,&r);
+        if(!PtInRect(&r,p) && (GetAsyncKeyState(VK_LBUTTON)&0x8000)) OwnedMenuHide();
+        else if(!PtInRect(&r,p) && (GetAsyncKeyState(VK_RBUTTON)&0x8000)) OwnedMenuHide();
+        return 0;
+    }
+    case WM_ERASEBKGND: return 1; // the card paints every pixel; erasing white first flickered
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC dc=BeginPaint(h,&ps);
+        RECT rc{}; GetClientRect(h,&rc);
+        HDC mem=CreateCompatibleDC(dc);
+        HBITMAP bmp=CreateCompatibleBitmap(dc,rc.right,rc.bottom);
+        HGDIOBJ old=SelectObject(mem,bmp);
+        OwnedMenuPaint(mem);
+        BitBlt(dc,0,0,rc.right,rc.bottom,mem,0,0,SRCCOPY);
+        SelectObject(mem,old); DeleteObject(bmp); DeleteDC(mem);
+        EndPaint(h,&ps); return 0; }
+    case WM_MOUSEMOVE: {
+        int row=HitRow(GET_X_LPARAM(lp),GET_Y_LPARAM(lp));
+        if(row!=g_menu.hover) { g_menu.hover=row; InvalidateRect(h,nullptr,TRUE); }
+        return 0;
+    }
+    case WM_LBUTTONUP: {
+        int row=HitRow(GET_X_LPARAM(lp),GET_Y_LPARAM(lp));
+        OwnedMenuHide();
+        if(row>=0) OwnedMenuAction(row);
+        return 0;
+    }
+    case WM_CAPTURECHANGED: if(g_menu.visible) OwnedMenuHide(); return 0;
+    case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
+    case WM_DESTROY: PostQuitMessage(0); return 0;
+    }
+    return DefWindowProcW(h,msg,wp,lp);
+}
+DWORD WINAPI OwnedMenuThread(void*) {
+    ULONG_PTR token=0; Gdiplus::GdiplusStartupInput input;
+    Gdiplus::GdiplusStartup(&token,&input,nullptr);
+    WNDCLASSEXW wc{}; wc.cbSize=sizeof(wc); wc.lpfnWndProc=OwnedMenuProc; wc.hInstance=g_instance;
+    wc.hCursor=LoadCursorW(nullptr,IDC_ARROW); wc.lpszClassName=L"MouseBatteryOwnedMenu";
+    RegisterClassExW(&wc);
+    g_menu.hwnd=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_TOPMOST|WS_EX_NOACTIVATE,
+        L"MouseBatteryOwnedMenu",L"",WS_POPUP,0,0,10,10,nullptr,nullptr,g_instance,nullptr);
+    if(!g_menu.hwnd) { WorkerDiag(L"menu-owned-window-failed"); if(g_menu.ready) SetEvent(g_menu.ready); return 1; }
+    WorkerDiag(L"menu-owned-window-ready");
+    if(g_menu.ready) SetEvent(g_menu.ready);
+    MSG msg;
+    while(GetMessageW(&msg,nullptr,0,0)>0) { TranslateMessage(&msg); DispatchMessageW(&msg); }
+    Gdiplus::GdiplusShutdown(token);
+    return 0;
+}
+void ShowOwnedMenu(bool light,bool startup,int anchorX,int anchorY,int dpi) {
+    {
+        std::lock_guard lock(g_menuLock);
+        g_menu.light=light; g_menu.startup=startup;
+        g_menu.anchorX=anchorX; g_menu.anchorY=anchorY; g_menu.dpi=dpi; g_menu.hover=-1;
+    }
+    if(!g_menu.threadId) {
+        g_menu.ready=CreateEventW(nullptr,TRUE,FALSE,nullptr);
+        HANDLE thread=CreateThread(nullptr,0,OwnedMenuThread,nullptr,0,&g_menu.threadId);
+        if(thread) CloseHandle(thread);
+        if(g_menu.ready) WaitForSingleObject(g_menu.ready,3000);
+    }
+    if(g_menu.hwnd) PostMessageW(g_menu.hwnd,WM_APP+1,0,0);
 }
 
 bool Insert(FrameworkElement const& root,int position) {
@@ -265,7 +464,7 @@ bool Insert(FrameworkElement const& root,int position) {
     v->host=Border(); v->host.Name(L"MouseBatteryTaskbarText");
     Automation::AutomationProperties::SetAutomationId(v->host,L"MouseBatteryTaskbarText");
     v->host.MinWidth(56); v->host.VerticalAlignment(VerticalAlignment::Stretch);
-    if(position==3) {v->host.Width(56);v->host.HorizontalAlignment(HorizontalAlignment::Right);}
+    if(position==3) {v->host.Width(56);v->host.HorizontalAlignment(HorizontalAlignment::Left);}
     v->host.Background(SolidColorBrush(Colors::Transparent()));
     v->pill=Border(); v->pill.Width(52); v->pill.Height(28); v->pill.CornerRadius({10,10,10,10});
     v->pill.Padding({4,0,4,0}); v->pill.BorderThickness({1,1,1,1});
@@ -276,7 +475,36 @@ bool Insert(FrameworkElement const& root,int position) {
     // wakes the glass pill and the data weight.
     v->text=TextBlock(); v->text.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->text.FontSize(15.0); v->text.FontWeight(Windows::UI::Text::FontWeights::Normal()); v->text.VerticalAlignment(VerticalAlignment::Center);
     v->suffix=TextBlock(); v->suffix.Text(L"%"); v->suffix.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->suffix.FontSize(11.5); v->suffix.Margin({2,2,0,0}); v->suffix.VerticalAlignment(VerticalAlignment::Center); // opacity is theme-dependent, set in Update (§4.1)
-    number.Children().Append(v->text); number.Children().Append(v->suffix); v->pill.Child(number); v->host.Child(v->pill);
+    number.Children().Append(v->text); number.Children().Append(v->suffix); v->pill.Child(number);
+    // Charge pulse (design doc 4.4): a ring on the pill's own 52x28 outline that
+    // only exists while charging, breathing 0.30 <-> 0.95 opacity on a 2.4 s
+    // cycle. The numeral keeps its geometry and the ring ignores the pointer, so
+    // hover glass and the tooltip still own the pill.
+    v->glowRing=Border();
+    v->glowRing.Width(52); v->glowRing.Height(28);
+    v->glowRing.CornerRadius({10,10,10,10});
+    v->glowRing.BorderThickness({1,1,1,1});
+    v->glowRing.Background(nullptr);
+    v->glowRing.Opacity(0.0);
+    v->glowRing.IsHitTestVisible(false);
+    v->glowRing.Visibility(Visibility::Collapsed);
+    {
+        DoubleAnimation fade;
+        fade.From(0.30); fade.To(0.95);
+        Duration cycle; cycle.TimeSpan=Windows::Foundation::TimeSpan{std::chrono::milliseconds(1200)}; cycle.Type=DurationType::TimeSpan;
+        fade.Duration(cycle);
+        fade.AutoReverse(true);
+        RepeatBehavior forever; forever.Type=RepeatBehaviorType::Forever;
+        fade.RepeatBehavior(forever);
+        Storyboard::SetTarget(fade,v->glowRing);
+        Storyboard::SetTargetProperty(fade,L"Opacity");
+        v->glowStory=Storyboard();
+        v->glowStory.Children().Append(fade);
+    }
+    Grid pillStack; pillStack.Width(52); pillStack.Height(28);
+    pillStack.HorizontalAlignment(HorizontalAlignment::Center); pillStack.VerticalAlignment(VerticalAlignment::Center);
+    pillStack.Children().Append(v->glowRing); pillStack.Children().Append(v->pill);
+    v->host.Child(pillStack);
     StackPanel card; card.Width(240); card.Padding({20,20,20,20});
     // ① Identity band (§2.2): 16 DIP halo + 8 DIP core at the content origin,
     // device name 6 DIP to the right of the core. The halo overhangs 4 DIP
@@ -338,21 +566,53 @@ bool Insert(FrameworkElement const& root,int position) {
     v->tooltipOther=TextBlock(); v->tooltipOther.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipOther.FontSize(11.5); v->tooltipOther.Margin({0,8,0,0}); v->tooltipOther.Visibility(Visibility::Collapsed); // ink α225 set in Update
     card.Children().Append(nameRow); card.Children().Append(valueRow); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipHairline); card.Children().Append(statusLine); card.Children().Append(v->tooltipOther);
     v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({12,12,12,12}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->pill,v->tooltip); // pill only: hovering the empty slot corners must not open the card
-    v->menu=MenuFlyout();
-    auto iconFor=[](wchar_t const* glyph){ FontIcon i; i.FontFamily(FontFamily(L"Segoe MDL2 Assets")); i.Glyph(glyph); return i; };
-    v->settings=MenuFlyoutItem(); v->settings.Text(L"设置"); v->settings.Icon(iconFor(L"\uE713"));
-    v->toggle=MenuFlyoutItem(); v->toggle.Text(L"切换开机启动"); v->toggle.Icon(iconFor(L"\uE72C"));
-    v->exit=MenuFlyoutItem(); v->exit.Text(L"退出工具"); v->exit.Icon(iconFor(L"\uE7E8"));
-    v->settingsToken=v->settings.Click([](auto const&,auto const&){Launch(L"--manage");});
-    v->toggleToken=v->toggle.Click([](auto const&,auto const&){Launch(L"--toggle-startup");});
-    v->exitToken=v->exit.Click([](auto const&,auto const&){Launch(L"--exit");});
-    v->menu.Items().Append(v->settings); v->menu.Items().Append(v->toggle); v->menu.Items().Append(MenuFlyoutSeparator()); v->menu.Items().Append(v->exit);
-    v->pill.ContextFlyout(v->menu); // right-click menu also scoped to the visible pill
+    // Right-click opens the owned layered menu (MenuWindow block above): the
+    // stock MenuFlyout cannot be reshaped and a XAML Flyout above the taskbar
+    // never receives pointer input, so this surface is drawn and hit-tested here.
+    v->menuOpenToken=v->host.RightTapped([](Windows::Foundation::IInspectable const&,Windows::UI::Xaml::Input::RightTappedRoutedEventArgs const& e){
+        if(!g_view) return;
+        auto& vv=*g_view;
+        HWND taskbar=TaskbarWindow();
+        if(!taskbar) return;
+        RECT tbr{}; GetWindowRect(taskbar,&tbr);
+        int dpi=GetDpiForWindow(taskbar);
+        if(dpi<=0) dpi=96;
+        double scale=dpi/96.0;
+        auto content=vv.host.XamlRoot().Content();
+        auto point=vv.host.TransformToVisual(content).TransformPoint({0,0});
+        int anchorX=(int)std::lround(tbr.left+(point.X+vv.host.ActualWidth()/2.0)*scale);
+        int anchorY=(int)std::lround(tbr.top+point.Y*scale);
+        bool light=vv.host.ActualTheme()==ElementTheme::Light;
+        { wchar_t b[256]; _snwprintf_s(b,256,_TRUNCATE,L"menu-anchor dpi=%d scale=%.3f ax=%d ay=%d tbr=%d,%d pt=%.1f,%.1f",dpi,scale,anchorX,anchorY,(int)tbr.left,(int)tbr.top,point.X,point.Y); WorkerDiag(b); }
+        ShowOwnedMenu(light,vv.startupState,anchorX,anchorY,dpi);
+        e.Handled(true);
+    });
+    v->pill.ContextFlyout(nullptr);
     // Hover reveals the glass pill; left click stays inert on purpose so a
     // stray click on the readout can never trigger anything.
     v->hoverEnter=v->pill.PointerEntered([](auto const&,auto const&){ if(g_view){ g_view->hover=true; PaintPill(*g_view); } });
     v->hoverExit=v->pill.PointerExited([](auto const&,auto const&){ if(g_view){ g_view->hover=false; PaintPill(*g_view); } });
-    if(grid) {
+    if(grid && position==3) {
+        // RootGrid owns the taskbar background and label columns. Inserting a
+        // spacer column there pushed the background layer aside and left a black
+        // hole exactly as wide as the spacer (anything transparent on top, e.g.
+        // TrafficMonitor's panel, went black with it). A Canvas child adds no
+        // layout slot at all, and unlike a column-spanning Grid child it keeps the
+        // host's own 56x48 layout box - ToolTipService needs that box to anchor
+        // the hover card above the pill.
+        v->overlay=Canvas();
+        v->overlay.HorizontalAlignment(HorizontalAlignment::Stretch);
+        v->overlay.VerticalAlignment(VerticalAlignment::Stretch);
+        Grid::SetColumn(v->overlay,0);
+        Grid::SetColumnSpan(v->overlay,(int)std::max(1u,grid.ColumnDefinitions().Size()));
+        Grid::SetRowSpan(v->overlay,(int)std::max(1u,grid.RowDefinitions().Size()));
+        v->leftPad=ExternalLeftWidth()+kExternalGap;
+        v->host.Width(56); v->host.Height(48);
+        Canvas::SetLeft(v->host,v->leftPad);
+        Canvas::SetTop(v->host,0.0);
+        v->overlay.Children().Append(v->host);
+        grid.Children().Append(v->overlay);
+    } else if(grid) {
         // An empty ColumnDefinitions collection means one implicit star column.
         // Materialize it before inserting our Auto column; otherwise native
         // children shifted to column 1 would be clamped back into our column 0.
@@ -361,7 +621,6 @@ bool Insert(FrameworkElement const& root,int position) {
             grid.ColumnDefinitions().Append(v->implicitColumn);
         }
         v->column=ColumnDefinition(); v->column.Width({1,GridUnitType::Auto});
-        if(position==3) v->column.Width({ExternalLeftWidth()+56,GridUnitType::Pixel});
         grid.ColumnDefinitions().InsertAt(slot,v->column);
         for(auto const& item:grid.Children()) if(auto child=item.try_as<FrameworkElement>()) {
             int col=Grid::GetColumn(child),span=Grid::GetColumnSpan(child);
@@ -407,7 +666,18 @@ void Update(Work& work) {
         if(!inserted) {work.health=L"placement unavailable";return;}
     }
     auto& v=*g_view;
-    if(s.position==3) v.column.Width({ExternalLeftWidth()+56,GridUnitType::Pixel});
+    if(s.position==3) {
+        double leftPad=ExternalLeftWidth()+kExternalGap;
+        if(leftPad<0) leftPad=0;
+        // TrafficMonitor resizes with its content; only touch XAML when the gap moved.
+        if(v.leftPad<0 || leftPad>v.leftPad+0.5 || leftPad<v.leftPad-0.5) {
+            v.leftPad=leftPad; Canvas::SetLeft(v.host,leftPad);
+        }
+        if(v.overlay) {
+            double barHeight=v.overlay.ActualHeight();
+            if(barHeight>0 && v.host.Height()!=barHeight) v.host.Height(barHeight);
+        }
+    }
     v.text.Text(std::to_wstring(s.percent));
     bool actualLight=v.host.ActualTheme()==ElementTheme::Light;
     // Probe-only override; production always publishes 0 so the host theme wins.
@@ -526,7 +796,15 @@ void Update(Work& work) {
     v.tooltipFill.Background(SolidColorBrush(s.percent<=20 ? pillColor : identity));
     v.tooltipFill.Width(200.0*s.percent/100.0);
     Automation::AutomationProperties::SetName(v.host,hstring(s.tooltip));
-    v.toggle.Text(s.startup ? L"关闭开机启动" : L"开启开机启动");
+    v.startupState=s.startup;
+    // Charge state: 1..3 charging, 4 fault, 0 unknown (design doc 4.4).
+    bool chargingNow=s.charging>=1 && s.charging<=3;
+    v.glowRing.BorderBrush(SolidColorBrush(WithAlphaA(identity,240)));
+    if(chargingNow) {
+        if(!v.glowOn) { v.glowOn=true; v.glowRing.Visibility(Visibility::Visible); v.glowStory.Begin(); }
+    } else {
+        if(v.glowOn) { v.glowOn=false; v.glowStory.Stop(); v.glowRing.Visibility(Visibility::Collapsed); }
+    }
     v.host.UpdateLayout();
     v.styled=true; v.styleSig=sig;
     } // restyle
