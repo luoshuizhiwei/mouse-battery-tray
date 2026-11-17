@@ -563,7 +563,11 @@ bool Insert(FrameworkElement const& root,int position) {
     // One hairline between readout and state (§2.2): one cut is a partition.
     v->tooltipHairline=Border(); v->tooltipHairline.Height(1); v->tooltipHairline.Margin({0,0,0,10});
     // Companion mouse summary fed by tooltip line 1; hidden for single-mouse setups.
-    v->tooltipOther=TextBlock(); v->tooltipOther.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipOther.FontSize(11.5); v->tooltipOther.Margin({0,8,0,0}); v->tooltipOther.Visibility(Visibility::Collapsed); // ink α225 set in Update
+    v->tooltipOther=TextBlock(); v->tooltipOther.FontFamily(FontFamily(L"Segoe UI Variable Text")); v->tooltipOther.FontSize(11.5); v->tooltipOther.Margin({0,8,0,0});
+    // The companion line is longer than the card is wide ("… · Bolt 接收器");
+    // without a width cap and wrapping it ran past the card edge and got cut
+    // mid-word. Wrap inside the 200 DIP content column instead.
+    v->tooltipOther.TextWrapping(TextWrapping::Wrap); v->tooltipOther.MaxWidth(200); v->tooltipOther.Visibility(Visibility::Collapsed); // ink α225 set in Update
     card.Children().Append(nameRow); card.Children().Append(valueRow); card.Children().Append(v->tooltipTrack); card.Children().Append(v->tooltipHairline); card.Children().Append(statusLine); card.Children().Append(v->tooltipOther);
     v->tooltip=ToolTip(); v->tooltip.Padding({0,0,0,0}); v->tooltip.CornerRadius({12,12,12,12}); v->tooltip.Content(card); ToolTipService::SetToolTip(v->pill,v->tooltip); // pill only: hovering the empty slot corners must not open the card
     // Right-click opens the owned layered menu (MenuWindow block above): the
@@ -712,7 +716,15 @@ void Update(Work& work) {
     v.tooltipName.Text(nl==std::wstring::npos ? detail : detail.substr(0,nl));
     if(nl!=std::wstring::npos && nl+1<detail.size()) {
         v.tooltipOther.Visibility(Visibility::Visible);
-        v.tooltipOther.Text(detail.substr(nl+1));
+        {   // The card column is 200 DIP wide; "Bolt 接收器" overflowed it and left
+            // a lone 器 on the second row. Shorten the transport name for the card
+            // only - the tooltip keeps the full wording.
+            std::wstring other=detail.substr(nl+1);
+            std::wstring const longName=L"Bolt 接收器";
+            size_t at=other.find(longName);
+            if(at!=std::wstring::npos) other.replace(at,longName.size(),L"Bolt");
+            v.tooltipOther.Text(other);
+        }
     } else v.tooltipOther.Visibility(Visibility::Collapsed);
 
     v.tooltipValue.Text(std::to_wstring(s.percent)); // numeral only: the % lives in valueUnit (F1)

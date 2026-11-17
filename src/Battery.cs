@@ -172,22 +172,34 @@ internal sealed class BatterySource {
 // re-enumeration; the pill follows the raw-input active device when its reading
 // is fresh and falls back to the freshest device otherwise.
 internal sealed class DisplayState {
-    sealed class View { public BatteryReading Last; public long LastSuccessMs; public bool Failed; public string Token; }
+    sealed class View { public BatteryReading Last; public long LastSuccessMs; public bool Failed, Missing; public string Token; }
     readonly Dictionary<string,View> devices=new Dictionary<string,View>();
     internal string ActiveKey;
+    bool treeChanged;
+    internal void NotifyDeviceChange() { treeChanged=true; }
     internal void Apply(BatteryReading[] readings,long nowMs) {
         if(readings==null) return;
+        var seen=new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
         foreach(var r in readings) {
             if(r==null || r.UnitId==null) continue;
             View v; if(!devices.TryGetValue(r.UnitId,out v)) { v=new View{Token=TokenOf(r.Path)}; devices[r.UnitId]=v; }
-            v.Last=r; v.LastSuccessMs=nowMs; v.Failed=false; v.Token=TokenOf(r.Path)+":"+BoltIndexOf(r.Path);
+            v.Last=r; v.LastSuccessMs=nowMs; v.Failed=false; v.Missing=false; v.Token=TokenOf(r.Path)+":"+BoltIndexOf(r.Path);
+            seen.Add(r.UnitId);
+        }
+        // Only a real device-tree change proves absence. A poll can legitimately
+        // return a subset (one mouse busy, another quiet), so "not in this round"
+        // alone must not retire a device - but when the OS says something was
+        // plugged or pulled, a device that is missing from this round is gone.
+        if(treeChanged) {
+            foreach(var kv in devices) if(!seen.Contains(kv.Key) && !kv.Value.Failed) kv.Value.Missing=true;
+            treeChanged=false;
         }
     }
     internal void MarkFailed(string[] paths,long nowMs) {
         if(paths==null) return;
         foreach(var p in paths) {
             string token=TokenOf(p)+":"+BoltIndexOf(p);
-            foreach(var v in devices.Values) if(v.Token==token) { v.Failed=true; break; }
+            foreach(var v in devices.Values) if(v.Token==token) { v.Failed=true; v.Missing=false; break; }
         }
     }
     internal void SetActive(string unitKey) { if(unitKey!=null) ActiveKey=unitKey; }
@@ -237,11 +249,13 @@ internal sealed class DisplayState {
     }
     View DisplayedView(long nowMs) {
         View v;
-        if(ActiveKey!=null && devices.TryGetValue(ActiveKey,out v) && nowMs-v.LastSuccessMs<15000) return v;
+        // A device that just failed (unplugged / went to sleep) must yield at once:
+        // the 15 s freshness window otherwise keeps a dead mouse on the pill.
+        if(ActiveKey!=null && devices.TryGetValue(ActiveKey,out v) && nowMs-v.LastSuccessMs<15000 && !v.Failed && !v.Missing) return v;
         View best=null;
         foreach(var kv in devices) {
             var x=kv.Value;
-            if(x.Last!=null && nowMs-x.LastSuccessMs<15000 && (best==null || x.LastSuccessMs>=best.LastSuccessMs)) best=x;
+            if(x.Last!=null && !x.Missing && nowMs-x.LastSuccessMs<15000 && (best==null || x.LastSuccessMs>=best.LastSuccessMs)) best=x;
         }
         return best;
     }

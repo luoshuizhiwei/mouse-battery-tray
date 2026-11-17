@@ -397,6 +397,7 @@ internal sealed class TrayContext : ApplicationContext {
     bool rawInputOk;
     string rawInputError;
     int rawSeen;
+    int deviceNodesChanged;
     string rawLast="";
     string rawRegInfo="";
     readonly EventWaitHandle show;
@@ -451,8 +452,15 @@ internal sealed class TrayContext : ApplicationContext {
             uint got=GetRegisteredRawInputDevices(probe,ref probeCount,ridSize);
             rawRegInfo="got="+got+" count="+probeCount+(probeCount>0 ? (" firstTarget="+probe[0].Target+" flags="+probe[0].Flags+" usage="+probe[0].UsagePage+","+probe[0].Usage) : "");
         }
-        dispatcher.OnMessage=delegate(Message m) { if(m.Msg==0x00FF) HandleRawInput(m); };
+        dispatcher.OnMessage=delegate(Message m) {
+            if(m.Msg==0x00FF) HandleRawInput(m);
+            else if(m.Msg==0x0219 && (int)m.WParam==0x0007) { deviceNodesChanged++; state.NotifyDeviceChange(); nextPoll=0; } // DBT_DEVNODES_CHANGED
+        };
         Microsoft.Win32.SystemEvents.UserPreferenceChanged+=OnPreferenceChanged;
+        // A mouse pulled off the receiver should flip the pill now, not at the
+        // next 5 s poll. .NET Framework has no SystemEvents device events, so the
+        // dispatcher window watches WM_DEVICECHANGE / DBT_DEVNODES_CHANGED.
+        // (handled in OnMessage below)
         timer.Interval=250; timer.Tick+=Tick; timer.Start();
         Directory.CreateDirectory(Path.GetDirectoryName(statusPath));
     }
@@ -555,7 +563,7 @@ internal sealed class TrayContext : ApplicationContext {
         }
         string status=visible ? text : "未连接或电量暂不可用\n"+failure;
         if(manager!=null && !manager.IsDisposed) UpdateManagerDisplay(visible);
-        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nActiveKey="+(state.ActiveKey??"(none)")+"\nRawInput="+(rawInputOk?"on":"off")+"\nDispatcherMsgs="+dispatcher.Total+"\nDispatcherRaw="+dispatcher.Raw+"\nRawSeen="+rawSeen+"\nRawReg="+rawRegInfo+"\nTokens="+state.TokenDump+"\nRawLast="+rawLast+"\nRawInputError="+rawInputError+"\nDevices="+state.Describe(now)+"\nPollInterval="+pollInterval+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
+        string diagnostic="TaskbarDataVisible="+visible+"\nPosition="+position+"\n"+status+"\nStartup="+startupEnabled+"\nReadError="+failure+"\nActiveKey="+(state.ActiveKey??"(none)")+"\nRawInput="+(rawInputOk?"on":"off")+"\nDispatcherMsgs="+dispatcher.Total+"\nDispatcherRaw="+dispatcher.Raw+"\nRawSeen="+rawSeen+"\nRawReg="+rawRegInfo+"\nDevNodesChanged="+deviceNodesChanged+"\nTokens="+state.TokenDump+"\nRawLast="+rawLast+"\nRawInputError="+rawInputError+"\nDevices="+state.Describe(now)+"\nPollInterval="+pollInterval+"\nNative="+(native!=null ? native.Status : "降级托盘（"+degradedReason+"）");
         if(diagnostic!=lastStatus) {
             try { File.WriteAllText(statusPath,DateTimeOffset.Now.ToString("o")+"\n"+diagnostic,Encoding.UTF8); }
             catch(IOException ex) { ShowFileError(ex.Message); }
